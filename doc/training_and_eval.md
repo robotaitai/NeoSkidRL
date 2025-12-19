@@ -78,6 +78,15 @@ python -m neoskidrl.scripts.eval --algo sac --model runs/train/<run_name>/model.
 Videos and metrics are written to `runs/eval_videos/<scenario>/`.
 Scenario presets are defined under `scenarios` in `config/eval.yml`.
 
+## Camera selection
+
+Rendered videos use the camera defined by `sensors.cameras.render_camera` in your config.
+Default is `front` (on-vehicle). You can override per-run with:
+
+```bash
+python -m neoskidrl.scripts.eval --model runs/latest --config config/eval.yml --scenario easy --camera track
+```
+
 ### PPO evaluation
 
 ```bash

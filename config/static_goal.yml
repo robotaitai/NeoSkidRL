@@ -36,6 +36,7 @@ sensors:
     rays: 360
     range_m: 10.0
   cameras:
+    render_camera: "front"
     rgb:
       enabled: true
       width: 320

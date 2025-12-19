@@ -31,6 +31,7 @@
         <geom name="wheel_rr_geom" type="cylinder" size="0.0485 0.020" euler="90 0 0" rgba="0.2 0.2 0.2 1" density="300" friction="2.0 0.005 0.0001"/>
       </body>
 
+      <camera name="front" pos="0.15 0 0.12" xyaxes="0 -1 0 0 0 1"/>
       <camera name="track" mode="trackcom" pos="0 -3 1.5" xyaxes="1 0 0 0 1 0"/>
     </body>
 
