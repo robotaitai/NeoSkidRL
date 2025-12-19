@@ -1,83 +1,33 @@
-env:
-  seed: 123
-  dt: 0.02
-  episode_sec: 10.0
-  frame_skip: 1
+base_config: train.yml
+seeds: [11, 22, 33, 44, 55]
+scenarios:
+  easy:
+    world:
+      goal:
+        fixed: true
+        pos_m: [2.0, 0.0]
+        yaw_deg: 0.0
+      obstacles:
+        count_range: [5, 5]
+        size_xy_range_m: [0.20, 0.40]
+  medium:
+    world:
+      goal:
+        fixed: true
+        pos_m: [3.0, 0.0]
+        yaw_deg: 0.0
+      obstacles:
+        count_range: [12, 12]
+        size_xy_range_m: [0.20, 0.60]
+  hard:
+    world:
+      goal:
+        fixed: true
+        pos_m: [4.0, 0.0]
+        yaw_deg: 0.0
+      obstacles:
+        count_range: [20, 20]
+        size_xy_range_m: [0.30, 0.80]
 
-robot:
-  # from your drawing (meters)
-  length_m: 0.307
-  width_m: 0.247
-  wheel_diameter_m: 0.097
-  wheel_radius_m: 0.0485
-  wheelbase_m: 0.210
-  track_m: 0.202
-
-  drive:
-    mode: "skid_steer"            # options: skid_steer | mecanum
-    wheel_count: 4
-    enforce_no_side_slip: true     # sim intent, not perfect physics guarantee
-    lateral_damping: 0.90          # 0=no damping, 1=full lateral velocity suppression
-
-limits:
-  v_max: 1.0
-  w_max: 2.0
-  wheel_vel_max: 30.0              # rad/s (used when action_space=wheel_velocities)
-
-control:
-  action_space: "v_w"              # options: v_w | wheel_velocities
-  rate_limit:
-    enabled: true
-    max_delta_per_step: 0.20
-
-sensors:
-  lidar:
-    enabled: true
-    rays: 360
-    range_m: 10.0
-  cameras:
-    rgb:
-      enabled: true
-      width: 320
-      height: 240
-      fov_deg: 90
-    depth:
-      enabled: true
-      width: 320
-      height: 240
-      fov_deg: 90
-
-world:
-  arena_m: [10.0, 10.0]             # [x, y]
-  goal:
-    fixed: true
-    pos_m: [2.0, 0.0]
-    yaw_deg: 0.0
-    clearance_m: 0.60
-    height_m: 0.01
-  obstacles:
-    max_count: 30
-    count_range: [15, 15]
-    size_xy_range_m: [0.20, 0.80]
-    height_m: 0.30
-    cylinder_prob: 0.40             # probability of cylinder vs box
-    margin_m: 0.25                   # keep spawn away from robot/goal
-
-task:
-  success:
-    pos_tol_m: 0.20
-    yaw_tol_deg: 10.0
-    stop_speed_mps: 0.10
-  failure:
-    collision: true
-    stuck_sec: 1.5
-    min_progress_m: 0.05
-
-reward:
-  enabled_terms: ["progress", "time", "smooth", "collision", "goal_bonus"]
-  weights:
-    progress: 1.0
-    time: -0.01
-    smooth: -0.05
-    collision: -10.0
-    goal_bonus: 20.0
+eval:
+  video_fps: 30

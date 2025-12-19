@@ -18,11 +18,18 @@ Smoke test (random actions):
 python -m neoskidrl.scripts.smoke_test
 ```
 
-Minimal SAC training (optional dependency):
+Headless SAC training (optional dependency):
 
 ```bash
 pip install -e .[train]
-python -m neoskidrl.scripts.train_sac
+python -m neoskidrl.scripts.train --config config/train.yml --num-envs 64 --headless
+```
+
+Evaluation with video (optional dependency):
+
+```bash
+pip install -e .[train,video]
+python -m neoskidrl.scripts.eval --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario easy
 ```
 
 ## Environment
@@ -36,8 +43,13 @@ python -m neoskidrl.scripts.train_sac
 - Procedural obstacles: random mix of boxes/cylinders per episode
 - Termination: success, collision, stuck, or timeout (~10s by default)
 
-Config lives in `config/default.yml` (also packaged under `src/neoskidrl/config/default.yml`).
-Reward terms are computed in code and aggregated via `reward.enabled_terms` + `reward.weights` in the config.
+Config overview:
+- `config/train.yml`: training defaults (randomized)
+- `config/eval.yml`: eval scenarios + fixed seeds
+- `config/default.yml`: legacy defaults
+- Reward terms are computed in code and aggregated via `reward.enabled_terms` + `reward.weights`.
+
+Reproducibility: `train` saves the exact config + args under `runs/train/<run_name>/`.
 
 ## Docs
 

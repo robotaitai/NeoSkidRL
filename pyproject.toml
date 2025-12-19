@@ -27,6 +27,9 @@ viz = [
 test = [
   "pytest>=7.4",
 ]
+video = [
+  "imageio[ffmpeg]>=2.31",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

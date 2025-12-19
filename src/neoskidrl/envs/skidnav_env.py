@@ -41,12 +41,17 @@ def _ray_aabb_2d(origin_xy: np.ndarray, dir_xy: np.ndarray, box_min: np.ndarray,
 class NeoSkidNavEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array", "depth_array"], "render_fps": 50}
 
-    def __init__(self, config_path: str | Path | None = None, render_mode: str | None = None):
+    def __init__(
+        self,
+        config_path: str | Path | None = None,
+        render_mode: str | None = None,
+        config: dict | None = None,
+    ):
         super().__init__()
         if mujoco is None:
             raise ImportError("mujoco python package not found. Activate venv and `pip install mujoco`.")
 
-        self.cfg = load_config(config_path)
+        self.cfg = config if config is not None else load_config(config_path)
         self.render_mode = render_mode
 
         # Load MJCF
