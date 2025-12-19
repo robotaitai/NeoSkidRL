@@ -1,6 +1,7 @@
 # Training and Eval Instructions
 
 This guide covers headless training at scale, a live training visualization, and policy evaluation with video output.
+It also explains where metrics are written and what they mean.
 
 ## Setup
 
@@ -15,16 +16,23 @@ pip install -e .[train]
 Use `--num-envs` for parallel training and `--headless` to set `MUJOCO_GL=egl`:
 
 ```bash
-python -m neoskidrl.scripts.train --config config/train.yml --num-envs 256 --total-steps 2000000 --headless
+python -m neoskidrl.scripts.train --algo sac --config config/train.yml --num-envs 256 --total-steps 2000000 --headless
 ```
 
 Outputs (model + config) are saved under `runs/train/<run_name>/`.
+
+### PPO training
+
+```bash
+python -m neoskidrl.scripts.train --algo ppo --config config/train.yml --num-envs 256 --total-steps 2000000 --headless
+```
 
 For large runs (1000+ envs), increase system resources and expect slower per-step performance.
 
 ## Live training visualization (camera + lidar)
 
-This runs SAC in chunks and opens a live window for the camera and lidar after each chunk:
+This runs SAC in chunks and opens a live window for the camera and lidar after each chunk.
+If you want PPO visuals later, we can add a PPO variant of the visual training script.
 
 ```bash
 pip install -e .[train,viz]
@@ -39,14 +47,36 @@ Evaluate a trained policy on a deterministic scenario and record MP4:
 
 ```bash
 pip install -e .[train,video]
-python -m neoskidrl.scripts.eval --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario medium
+python -m neoskidrl.scripts.eval --algo sac --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario medium
 ```
 
 If you are running on a headless machine:
 
 ```bash
-python -m neoskidrl.scripts.eval --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario medium --headless
+python -m neoskidrl.scripts.eval --algo sac --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario medium --headless
 ```
 
 Videos and metrics are written to `runs/eval_videos/<scenario>/`.
 Scenario presets are defined under `scenarios` in `config/eval.yml`.
+
+### PPO evaluation
+
+```bash
+pip install -e .[train,video]
+python -m neoskidrl.scripts.eval --algo ppo --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario medium
+```
+
+## Metrics output (what you get per policy)
+
+Each evaluation run writes `metrics.json` under `runs/eval_videos/<scenario>/`.
+It includes per-episode and summary metrics:
+
+- success rate: fraction of episodes that ended in success
+- collision rate: fraction of episodes that ended in collision
+- stuck rate: fraction of episodes that terminated due to being stuck
+- time-to-goal: `steps * (dt * frame_skip)` in seconds
+- steps: number of environment steps in the episode
+- path length: total distance traveled in the XY plane
+- smoothness: sum of `|Δaction|` across the episode
+
+You can compare these across SAC vs PPO by running `eval` with `--algo sac` and `--algo ppo` and reading the metrics files.

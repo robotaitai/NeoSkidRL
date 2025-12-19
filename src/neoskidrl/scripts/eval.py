@@ -6,8 +6,10 @@ import os
 from pathlib import Path
 
 import yaml
+import numpy as np
 
 from neoskidrl.config import load_config, merge_config
+from neoskidrl.metrics import action_delta_l1, path_length_increment
 
 
 def _resolve_base_path(eval_path: str, base_config: str) -> Path:
@@ -40,6 +42,7 @@ def main() -> None:
     parser.add_argument("--episodes", type=int, default=None, help="Number of episodes to run.")
     parser.add_argument("--video-dir", default="runs/eval_videos")
     parser.add_argument("--headless", action="store_true", help="Set MUJOCO_GL=egl for offscreen rendering.")
+    parser.add_argument("--algo", choices=["sac", "ppo"], default="sac")
     parser.add_argument("--stochastic", action="store_true", help="Use stochastic actions.")
     args = parser.parse_args()
 
@@ -47,7 +50,7 @@ def main() -> None:
         os.environ["MUJOCO_GL"] = "egl"
 
     try:
-        from stable_baselines3 import SAC
+        from stable_baselines3 import PPO, SAC
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("stable-baselines3 not installed. Use `pip install -e .[train]`.") from exc
 
@@ -74,9 +77,13 @@ def main() -> None:
 
     from neoskidrl.envs import NeoSkidNavEnv
 
-    model = SAC.load(args.model)
+    if args.algo == "sac":
+        model = SAC.load(args.model)
+    else:
+        model = PPO.load(args.model)
     deterministic = not args.stochastic
 
+    step_dt = float(cfg["env"]["dt"]) * float(cfg["env"].get("frame_skip", 1))
     results = []
     for seed in seeds:
         env = NeoSkidNavEnv(config=cfg, render_mode="rgb_array")
@@ -91,6 +98,10 @@ def main() -> None:
         done = False
         ep_return = 0.0
         ep_len = 0
+        path_length = 0.0
+        smoothness = 0.0
+        prev_action = None
+        prev_pos = _info.get("base_xy") if _info is not None else None
         last_info = {}
         while not done:
             action, _state = model.predict(obs, deterministic=deterministic)
@@ -98,6 +109,13 @@ def main() -> None:
             ep_return += float(reward)
             ep_len += 1
             last_info = info
+            pos = info.get("base_xy") if info is not None else None
+            if pos is not None:
+                pos = np.asarray(pos, dtype=np.float32)
+            path_length += path_length_increment(prev_pos, pos)
+            smoothness += action_delta_l1(prev_action, np.asarray(action, dtype=np.float32))
+            prev_pos = pos
+            prev_action = np.asarray(action, dtype=np.float32)
             frame = env.render()
             if frame is not None:
                 writer.append_data(frame)
@@ -109,7 +127,10 @@ def main() -> None:
             {
                 "seed": seed,
                 "return": ep_return,
-                "length": ep_len,
+                "steps": ep_len,
+                "time_s": ep_len * step_dt,
+                "path_length": path_length,
+                "smoothness": smoothness,
                 "success": bool(last_info.get("success", False)),
                 "collision": bool(last_info.get("collision", False)),
                 "stuck": bool(last_info.get("stuck", False)),
@@ -117,12 +138,22 @@ def main() -> None:
             }
         )
 
+    success_rate = sum(1 for r in results if r["success"]) / max(1, len(results))
+    collision_rate = sum(1 for r in results if r["collision"]) / max(1, len(results))
+    stuck_rate = sum(1 for r in results if r["stuck"]) / max(1, len(results))
+
     summary = {
         "scenario": args.scenario,
+        "algo": args.algo,
         "episodes": len(results),
         "avg_return": sum(r["return"] for r in results) / max(1, len(results)),
-        "avg_length": sum(r["length"] for r in results) / max(1, len(results)),
-        "success_rate": sum(1 for r in results if r["success"]) / max(1, len(results)),
+        "avg_steps": sum(r["steps"] for r in results) / max(1, len(results)),
+        "avg_time_s": sum(r["time_s"] for r in results) / max(1, len(results)),
+        "avg_path_length": sum(r["path_length"] for r in results) / max(1, len(results)),
+        "avg_smoothness": sum(r["smoothness"] for r in results) / max(1, len(results)),
+        "success_rate": success_rate,
+        "collision_rate": collision_rate,
+        "stuck_rate": stuck_rate,
         "results": results,
     }
 

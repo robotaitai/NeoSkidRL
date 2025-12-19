@@ -369,7 +369,13 @@ class NeoSkidNavEnv(gym.Env):
         self._stuck_counter = 0
 
         obs = self._get_obs()
-        info = {"goal_xy": self.goal_xy.copy(), "goal_yaw": self.goal_yaw}
+        base_xy, base_yaw = self._get_base_pose()
+        info = {
+            "goal_xy": self.goal_xy.copy(),
+            "goal_yaw": self.goal_yaw,
+            "base_xy": base_xy.copy(),
+            "base_yaw": base_yaw,
+        }
         return obs, info
 
     def _apply_action(self, action: np.ndarray):
@@ -469,6 +475,8 @@ class NeoSkidNavEnv(gym.Env):
             "steps": self.steps,
             "reward_terms": terms,
             "reward_total": float(r),
+            "base_xy": base_xy.copy(),
+            "base_yaw": yaw,
         }
         return obs, float(r), terminated, truncated, info
 

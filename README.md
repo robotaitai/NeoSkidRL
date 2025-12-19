@@ -22,14 +22,28 @@ Headless SAC training (optional dependency):
 
 ```bash
 pip install -e .[train]
-python -m neoskidrl.scripts.train --config config/train.yml --num-envs 64 --headless
+python -m neoskidrl.scripts.train --algo sac --config config/train.yml --num-envs 64 --headless
+```
+
+Headless PPO training (optional dependency):
+
+```bash
+pip install -e .[train]
+python -m neoskidrl.scripts.train --algo ppo --config config/train.yml --num-envs 64 --headless
 ```
 
 Evaluation with video (optional dependency):
 
 ```bash
 pip install -e .[train,video]
-python -m neoskidrl.scripts.eval --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario easy
+python -m neoskidrl.scripts.eval --algo sac --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario easy
+```
+
+Evaluation with PPO:
+
+```bash
+pip install -e .[train,video]
+python -m neoskidrl.scripts.eval --algo ppo --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario easy
 ```
 
 ## Environment
