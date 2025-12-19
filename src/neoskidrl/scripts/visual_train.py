@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -68,20 +69,32 @@ def _run_live_rollout(env, model, steps: int, fps: float, seed: int | None) -> N
             obs, _info = env.reset()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Train SAC and periodically visualize progress.")
-    parser.add_argument("--config", default="config/default.yml", help="Path to config YAML.")
-    parser.add_argument("--total-steps", type=int, default=200_000)
-    parser.add_argument("--chunk-steps", type=int, default=20_000)
-    parser.add_argument("--rollout-steps", type=int, default=400)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--logdir", default="runs/tb")
-    parser.add_argument("--model-out", default="runs/skidnav_sac.zip")
-    parser.add_argument("--fps", type=float, default=30.0)
-    parser.add_argument("--headless", action="store_true", help="Set MUJOCO_GL=egl for offscreen rendering.")
-    args = parser.parse_args()
+def _save_checkpoint(model, checkpoint_dir: Path, latest_path: Path, steps_done: int) -> Path:
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_name = f"ckpt_{steps_done:06d}"
+    ckpt_path = checkpoint_dir / ckpt_name
+    model.save(str(ckpt_path))
+    latest_path.parent.mkdir(parents=True, exist_ok=True)
+    model.save(str(latest_path))
+    return ckpt_path
 
-    if args.headless and "MUJOCO_GL" not in os.environ:
+
+def run_training_chunks(
+    config_path: str,
+    total_steps: int,
+    chunk_steps: int,
+    rollout_steps: int,
+    seed: int,
+    logdir: str,
+    checkpoint_dir: str,
+    latest_path: str,
+    model_out: str,
+    fps: float,
+    headless: bool,
+    device: str,
+    enable_viz: bool,
+):
+    if headless and "MUJOCO_GL" not in os.environ:
         os.environ["MUJOCO_GL"] = "egl"
 
     try:
@@ -92,32 +105,88 @@ def main() -> None:
 
     from neoskidrl.envs import NeoSkidNavEnv
 
-    train_env = DummyVecEnv([lambda: NeoSkidNavEnv(config_path=args.config, render_mode=None)])
+    train_env = DummyVecEnv([lambda: NeoSkidNavEnv(config_path=config_path, render_mode=None)])
     train_env = VecMonitor(train_env)
+    train_env.reset(seed=seed)
 
     model = SAC(
         policy="MlpPolicy",
         env=train_env,
         verbose=1,
-        tensorboard_log=args.logdir,
+        tensorboard_log=logdir,
         learning_rate=3e-4,
         buffer_size=200_000,
         batch_size=256,
         gamma=0.99,
         train_freq=1,
         gradient_steps=1,
+        device=device,
     )
 
-    viz_env = NeoSkidNavEnv(config_path=args.config, render_mode="rgb_array")
+    viz_env = None
+    if enable_viz:
+        viz_env = NeoSkidNavEnv(config_path=config_path, render_mode="rgb_array")
 
     steps_done = 0
-    while steps_done < args.total_steps:
-        chunk = min(args.chunk_steps, args.total_steps - steps_done)
-        model.learn(total_timesteps=chunk, reset_num_timesteps=False)
-        steps_done += chunk
-        _run_live_rollout(viz_env, model, args.rollout_steps, args.fps, args.seed)
+    latest = Path(latest_path)
+    checkpoint_dir = Path(checkpoint_dir)
+    try:
+        while steps_done < total_steps:
+            chunk = min(chunk_steps, total_steps - steps_done)
+            model.learn(
+                total_timesteps=chunk,
+                reset_num_timesteps=False,
+                progress_bar=True,
+                log_interval=10,
+            )
+            steps_done += chunk
+            _save_checkpoint(model, checkpoint_dir, latest, steps_done)
+            if enable_viz and viz_env is not None:
+                _run_live_rollout(viz_env, model, rollout_steps, fps, seed)
+    except KeyboardInterrupt:
+        _save_checkpoint(model, checkpoint_dir, latest, steps_done)
+        raise
+    finally:
+        _save_checkpoint(model, checkpoint_dir, latest, steps_done)
+        train_env.close()
+        if viz_env is not None:
+            viz_env.close()
 
-    model.save(args.model_out)
+    model.save(model_out)
+    return model
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Train SAC and periodically visualize progress.")
+    parser.add_argument("--config", default="config/default.yml", help="Path to config YAML.")
+    parser.add_argument("--total-steps", type=int, default=200_000)
+    parser.add_argument("--chunk-steps", type=int, default=20_000)
+    parser.add_argument("--rollout-steps", type=int, default=400)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--logdir", default="runs/tb")
+    parser.add_argument("--model-out", default="runs/final")
+    parser.add_argument("--checkpoint-dir", default="runs/checkpoints")
+    parser.add_argument("--latest-path", default="runs/latest")
+    parser.add_argument("--fps", type=float, default=30.0)
+    parser.add_argument("--headless", action="store_true", help="Set MUJOCO_GL=egl for offscreen rendering.")
+    parser.add_argument("--device", default="auto")
+    args = parser.parse_args()
+
+    run_training_chunks(
+        config_path=args.config,
+        total_steps=args.total_steps,
+        chunk_steps=args.chunk_steps,
+        rollout_steps=args.rollout_steps,
+        seed=args.seed,
+        logdir=args.logdir,
+        checkpoint_dir=args.checkpoint_dir,
+        latest_path=args.latest_path,
+        model_out=args.model_out,
+        fps=args.fps,
+        headless=args.headless,
+        device=args.device,
+        enable_viz=True,
+    )
 
 
 if __name__ == "__main__":

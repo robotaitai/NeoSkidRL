@@ -34,6 +34,10 @@ def _parse_seeds(seed_arg: str | None, eval_cfg: dict, episodes: int | None) -> 
     return seeds
 
 
+def _normalize_model_path(model_path: str) -> str:
+    return model_path[:-4] if model_path.endswith(".zip") else model_path
+
+
 def _build_eval_config(eval_config_path: str, scenario: str) -> tuple[dict, dict]:
     eval_cfg = load_config(eval_config_path)
     base_path = _resolve_base_path(eval_config_path, eval_cfg.get("base_config", "train.yml"))
@@ -59,6 +63,7 @@ def run_eval(
     algo: str = "sac",
     run_id: str | None = None,
 ) -> dict:
+    model_path = _normalize_model_path(model_path)
     if headless and "MUJOCO_GL" not in os.environ:
         os.environ["MUJOCO_GL"] = "egl"
 

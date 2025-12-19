@@ -74,6 +74,16 @@ Reproducibility: `train` saves the exact config + args under `runs/train/<run_na
 Periodic eval during training is configured in `config/train.yml` under `train.eval`.
 Outputs go to `runs/checkpoints`, `runs/eval`, and `runs/eval_videos` by default.
 
+Visual training checkpoints:
+- `runs/latest.zip` is updated after every chunk and on exit.
+- `runs/checkpoints/ckpt_<steps>.zip` is saved every chunk.
+
+Example eval on the latest checkpoint:
+
+```bash
+python -m neoskidrl.scripts.eval --model runs/latest --config config/eval.yml --scenario easy --episodes 3 --headless
+```
+
 ## Docs
 
 - Visual demo: `doc/visual_demo.md`
