@@ -31,17 +31,34 @@ def _resolve_run_dir(run_dir: str | None, run_name: str | None) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train SAC on NeoSkidRL (headless-friendly).")
     parser.add_argument("--config", default="config/train.yml", help="Path to config YAML.")
-    parser.add_argument("--total-steps", type=int, default=300_000)
-    parser.add_argument("--num-envs", type=int, default=1)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--total-steps", type=int, default=None)
+    parser.add_argument("--num-envs", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--run-dir", default=None, help="Output directory for logs, model, and config.")
     parser.add_argument("--run-name", default=None, help="Folder name under runs/train/ if --run-dir is not set.")
-    parser.add_argument("--algo", choices=["sac", "ppo"], default="sac")
-    parser.add_argument("--headless", action="store_true", help="Set MUJOCO_GL=egl for offscreen rendering.")
+    parser.add_argument("--algo", choices=["sac", "ppo"], default=None)
+    parser.add_argument("--headless", action="store_true", help="Force headless rendering.")
+    parser.add_argument("--no-headless", action="store_true", help="Disable headless rendering.")
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
 
-    if args.headless and "MUJOCO_GL" not in os.environ:
+    from neoskidrl.config import load_config
+
+    cfg = load_config(args.config)
+    train_cfg = cfg.get("train", {})
+
+    algo = (args.algo or train_cfg.get("algo", "sac")).lower()
+    total_steps = int(args.total_steps or train_cfg.get("total_timesteps", 300_000))
+    num_envs = int(args.num_envs or train_cfg.get("num_envs", 1))
+    seed = int(args.seed if args.seed is not None else train_cfg.get("seed", 0))
+
+    headless = bool(train_cfg.get("headless", False))
+    if args.headless:
+        headless = True
+    if args.no_headless:
+        headless = False
+
+    if headless and "MUJOCO_GL" not in os.environ:
         os.environ["MUJOCO_GL"] = "egl"
 
     try:
@@ -53,20 +70,17 @@ def main() -> None:
     run_dir = _resolve_run_dir(args.run_dir, args.run_name)
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    from neoskidrl.config import load_config
-
-    cfg = load_config(args.config)
     (run_dir / "config.yml").write_text(yaml.safe_dump(cfg, sort_keys=False))
     (run_dir / "args.yml").write_text(yaml.safe_dump(vars(args), sort_keys=False))
 
-    env_fns = [_make_env(args.config, args.seed, i) for i in range(args.num_envs)]
-    if args.num_envs > 1:
+    env_fns = [_make_env(args.config, seed, i) for i in range(num_envs)]
+    if num_envs > 1:
         env = SubprocVecEnv(env_fns)
     else:
         env = DummyVecEnv(env_fns)
     env = VecMonitor(env)
 
-    if args.algo == "sac":
+    if algo == "sac":
         model = SAC(
             policy="MlpPolicy",
             env=env,
@@ -95,7 +109,29 @@ def main() -> None:
             device=args.device,
         )
 
-    model.learn(total_timesteps=args.total_steps)
+    callback = None
+    eval_cfg = train_cfg.get("eval", {})
+    if eval_cfg.get("enabled", False):
+        from neoskidrl.train.callbacks import PeriodicEvalCallback
+
+        eval_config_path = eval_cfg.get("eval_config", "config/eval.yml")
+        video_cfg = eval_cfg.get("video", {})
+        callback = PeriodicEvalCallback(
+            eval_config_path=eval_config_path,
+            scenario=str(eval_cfg.get("scenario", "easy")),
+            eval_freq_steps=int(eval_cfg.get("eval_freq_steps", 10_000)),
+            episodes=eval_cfg.get("episodes"),
+            seeds=eval_cfg.get("seeds"),
+            video_cfg=video_cfg,
+            output_dir=str(eval_cfg.get("output_dir", "runs/eval")),
+            video_dir=str(video_cfg.get("video_dir", "runs/eval_videos")),
+            checkpoint_dir=str(eval_cfg.get("checkpoints", {}).get("dir", "runs/checkpoints")),
+            headless=bool(eval_cfg.get("headless", True)),
+            deterministic=bool(eval_cfg.get("deterministic", True)),
+            algo=algo,
+        )
+
+    model.learn(total_timesteps=total_steps, callback=callback)
     model.save(str(run_dir / "model.zip"))
 
 

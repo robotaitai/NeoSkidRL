@@ -21,6 +21,25 @@ python -m neoskidrl.scripts.train --algo sac --config config/train.yml --num-env
 
 Outputs (model + config) are saved under `runs/train/<run_name>/`.
 
+### Automatic eval during training
+
+Periodic evaluation is configured in `config/train.yml` under `train.eval`.
+It runs in a separate env (no rendering in training envs), saves checkpoints, and writes:
+
+- Checkpoints: `runs/checkpoints/ckpt_<timesteps>.zip`
+- Metrics: `runs/eval/<scenario>/ckpt_<timesteps>/metrics.json`
+- Videos (optional): `runs/eval_videos/<scenario>/ckpt_<timesteps>/*.mp4`
+
+To disable eval or video, set:
+
+```yaml
+train:
+  eval:
+    enabled: false
+    video:
+      enabled: false
+```
+
 ### PPO training
 
 ```bash

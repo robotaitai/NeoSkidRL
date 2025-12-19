@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -33,20 +34,32 @@ def _parse_seeds(seed_arg: str | None, eval_cfg: dict, episodes: int | None) -> 
     return seeds
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate a policy and record MP4 videos.")
-    parser.add_argument("--model", required=True, help="Path to SB3 model (SAC).")
-    parser.add_argument("--config", default="config/eval.yml", help="Path to eval config YAML.")
-    parser.add_argument("--scenario", default="easy", help="Scenario preset from eval config.")
-    parser.add_argument("--seeds", default=None, help="Comma-separated list of seeds (override config).")
-    parser.add_argument("--episodes", type=int, default=None, help="Number of episodes to run.")
-    parser.add_argument("--video-dir", default="runs/eval_videos")
-    parser.add_argument("--headless", action="store_true", help="Set MUJOCO_GL=egl for offscreen rendering.")
-    parser.add_argument("--algo", choices=["sac", "ppo"], default="sac")
-    parser.add_argument("--stochastic", action="store_true", help="Use stochastic actions.")
-    args = parser.parse_args()
+def _build_eval_config(eval_config_path: str, scenario: str) -> tuple[dict, dict]:
+    eval_cfg = load_config(eval_config_path)
+    base_path = _resolve_base_path(eval_config_path, eval_cfg.get("base_config", "train.yml"))
+    base_cfg = load_config(base_path)
+    scenario_cfg = eval_cfg.get("scenarios", {}).get(scenario)
+    if scenario_cfg is None:
+        raise ValueError(f"Unknown scenario '{scenario}'.")
+    cfg = merge_config(base_cfg, scenario_cfg)
+    return cfg, eval_cfg
 
-    if args.headless and "MUJOCO_GL" not in os.environ:
+
+def run_eval(
+    model_path: str,
+    eval_config_path: str = "config/eval.yml",
+    scenario: str = "easy",
+    seeds: list[int] | None = None,
+    episodes: int | None = None,
+    output_dir: str = "runs/eval",
+    video_dir: str = "runs/eval_videos",
+    record_video: bool = True,
+    headless: bool = False,
+    deterministic: bool = True,
+    algo: str = "sac",
+    run_id: str | None = None,
+) -> dict:
+    if headless and "MUJOCO_GL" not in os.environ:
         os.environ["MUJOCO_GL"] = "egl"
 
     try:
@@ -54,46 +67,57 @@ def main() -> None:
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("stable-baselines3 not installed. Use `pip install -e .[train]`.") from exc
 
-    try:
-        import imageio.v2 as imageio
-    except Exception as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("imageio not installed. Use `pip install -e .[video]`.") from exc
+    imageio = None
+    if record_video:
+        try:
+            import imageio.v2 as imageio
+        except Exception as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("imageio not installed. Use `pip install -e .[video]`.") from exc
 
-    eval_cfg = load_config(args.config)
-    base_path = _resolve_base_path(args.config, eval_cfg.get("base_config", "train.yml"))
-    base_cfg = load_config(base_path)
-    scenario_cfg = eval_cfg.get("scenarios", {}).get(args.scenario)
-    if scenario_cfg is None:
-        raise ValueError(f"Unknown scenario '{args.scenario}'.")
-    cfg = merge_config(base_cfg, scenario_cfg)
+    cfg, eval_cfg = _build_eval_config(eval_config_path, scenario)
+    if seeds is None:
+        seeds = _parse_seeds(None, eval_cfg, episodes)
+    else:
+        if episodes is not None:
+            seeds = seeds[:episodes]
+    if episodes is not None and len(seeds) < episodes:
+        base = seeds[-1] if seeds else 0
+        seeds = seeds + [base + i + 1 for i in range(episodes - len(seeds))]
 
     video_fps = int(eval_cfg.get("eval", {}).get("video_fps", 30))
-    seeds = _parse_seeds(args.seeds, eval_cfg, args.episodes)
+    run_id = run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    out_dir = Path(args.video_dir) / args.scenario
+    out_dir = Path(output_dir) / scenario / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    video_out_dir = Path(video_dir) / scenario / run_id
+    if record_video:
+        video_out_dir.mkdir(parents=True, exist_ok=True)
+
     (out_dir / "config.yml").write_text(yaml.safe_dump(cfg, sort_keys=False))
     (out_dir / "eval.yml").write_text(yaml.safe_dump(eval_cfg, sort_keys=False))
 
     from neoskidrl.envs import NeoSkidNavEnv
 
-    if args.algo == "sac":
-        model = SAC.load(args.model)
+    if algo == "sac":
+        model = SAC.load(model_path)
     else:
-        model = PPO.load(args.model)
-    deterministic = not args.stochastic
+        model = PPO.load(model_path)
 
+    render_mode = "rgb_array" if record_video else None
     step_dt = float(cfg["env"]["dt"]) * float(cfg["env"].get("frame_skip", 1))
     results = []
     for seed in seeds:
-        env = NeoSkidNavEnv(config=cfg, render_mode="rgb_array")
+        env = NeoSkidNavEnv(config=cfg, render_mode=render_mode)
         obs, _info = env.reset(seed=seed)
-        video_path = out_dir / f"{args.scenario}_seed{seed}.mp4"
-        writer = imageio.get_writer(str(video_path), fps=video_fps)
 
-        frame = env.render()
-        if frame is not None:
-            writer.append_data(frame)
+        writer = None
+        video_path = None
+        if record_video:
+            video_path = video_out_dir / f"{scenario}_seed{seed}.mp4"
+            writer = imageio.get_writer(str(video_path), fps=video_fps)
+            frame = env.render()
+            if frame is not None:
+                writer.append_data(frame)
 
         done = False
         ep_return = 0.0
@@ -116,12 +140,14 @@ def main() -> None:
             smoothness += action_delta_l1(prev_action, np.asarray(action, dtype=np.float32))
             prev_pos = pos
             prev_action = np.asarray(action, dtype=np.float32)
-            frame = env.render()
-            if frame is not None:
-                writer.append_data(frame)
+            if writer is not None:
+                frame = env.render()
+                if frame is not None:
+                    writer.append_data(frame)
             done = term or trunc
 
-        writer.close()
+        if writer is not None:
+            writer.close()
         env.close()
         results.append(
             {
@@ -134,7 +160,7 @@ def main() -> None:
                 "success": bool(last_info.get("success", False)),
                 "collision": bool(last_info.get("collision", False)),
                 "stuck": bool(last_info.get("stuck", False)),
-                "video": str(video_path),
+                "video": str(video_path) if video_path is not None else None,
             }
         )
 
@@ -143,8 +169,9 @@ def main() -> None:
     stuck_rate = sum(1 for r in results if r["stuck"]) / max(1, len(results))
 
     summary = {
-        "scenario": args.scenario,
-        "algo": args.algo,
+        "scenario": scenario,
+        "algo": algo,
+        "run_id": run_id,
         "episodes": len(results),
         "avg_return": sum(r["return"] for r in results) / max(1, len(results)),
         "avg_steps": sum(r["steps"] for r in results) / max(1, len(results)),
@@ -158,6 +185,43 @@ def main() -> None:
     }
 
     (out_dir / "metrics.json").write_text(json.dumps(summary, indent=2))
+    return summary
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate a policy and record MP4 videos.")
+    parser.add_argument("--model", required=True, help="Path to SB3 model.")
+    parser.add_argument("--config", default="config/eval.yml", help="Path to eval config YAML.")
+    parser.add_argument("--scenario", default="easy", help="Scenario preset from eval config.")
+    parser.add_argument("--seeds", default=None, help="Comma-separated list of seeds (override config).")
+    parser.add_argument("--episodes", type=int, default=None, help="Number of episodes to run.")
+    parser.add_argument("--output-dir", default="runs/eval")
+    parser.add_argument("--video-dir", default="runs/eval_videos")
+    parser.add_argument("--headless", action="store_true", help="Set MUJOCO_GL=egl for offscreen rendering.")
+    parser.add_argument("--algo", choices=["sac", "ppo"], default="sac")
+    parser.add_argument("--stochastic", action="store_true", help="Use stochastic actions.")
+    parser.add_argument("--no-video", action="store_true", help="Disable MP4 recording.")
+    parser.add_argument("--run-id", default=None, help="Optional run id for output folders.")
+    args = parser.parse_args()
+
+    seeds = None
+    if args.seeds:
+        seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+
+    summary = run_eval(
+        model_path=args.model,
+        eval_config_path=args.config,
+        scenario=args.scenario,
+        seeds=seeds,
+        episodes=args.episodes,
+        output_dir=args.output_dir,
+        video_dir=args.video_dir,
+        record_video=not args.no_video,
+        headless=args.headless,
+        deterministic=not args.stochastic,
+        algo=args.algo,
+        run_id=args.run_id,
+    )
     print(json.dumps(summary, indent=2))
 
 

@@ -71,6 +71,9 @@ Config overview:
 
 Reproducibility: `train` saves the exact config + args under `runs/train/<run_name>/`.
 
+Periodic eval during training is configured in `config/train.yml` under `train.eval`.
+Outputs go to `runs/checkpoints`, `runs/eval`, and `runs/eval_videos` by default.
+
 ## Docs
 
 - Visual demo: `doc/visual_demo.md`

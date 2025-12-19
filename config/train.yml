@@ -81,3 +81,27 @@ reward:
     smooth: -0.05
     collision: -10.0
     goal_bonus: 20.0
+
+train:
+  algo: "sac"
+  total_timesteps: 300000
+  num_envs: 1
+  seed: 0
+  headless: true
+  eval:
+    enabled: true
+    eval_config: "config/eval.yml"
+    eval_freq_steps: 10000
+    episodes: 5
+    scenario: "easy"
+    seeds: [0, 1, 2, 3, 4]
+    deterministic: true
+    output_dir: "runs/eval"
+    headless: true
+    video:
+      enabled: true
+      record_first_n_evals: 3
+      then_every_n_evals: 5
+      video_dir: "runs/eval_videos"
+    checkpoints:
+      dir: "runs/checkpoints"
