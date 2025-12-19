@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Tuple
@@ -10,6 +11,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from neoskidrl.config import load_config
+from neoskidrl.rewards import aggregate_reward, compute_reward_terms
 import importlib.resources as ir
 
 try:
@@ -37,7 +39,7 @@ def _ray_aabb_2d(origin_xy: np.ndarray, dir_xy: np.ndarray, box_min: np.ndarray,
 
 
 class NeoSkidNavEnv(gym.Env):
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 50}
+    metadata = {"render_modes": ["rgb_array", "depth_array"], "render_fps": 50}
 
     def __init__(self, config_path: str | Path | None = None, render_mode: str | None = None):
         super().__init__()
@@ -56,6 +58,7 @@ class NeoSkidNavEnv(gym.Env):
         self.dt = float(self.cfg["env"]["dt"])
         self.frame_skip = int(self.cfg["env"].get("frame_skip", 1))
         self.max_steps = int(self.cfg["env"]["episode_sec"] / (self.dt * self.frame_skip))
+        self.model.opt.timestep = self.dt
 
         self.rays = int(self.cfg["sensors"]["lidar"]["rays"])
         self.lidar_range = float(self.cfg["sensors"]["lidar"]["range_m"])
@@ -80,6 +83,16 @@ class NeoSkidNavEnv(gym.Env):
         # obs: lidar + goal_rel(3) + speed(2)
         obs_dim = self.rays + 3 + 2
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
+
+        self.drive_mode = self.cfg["robot"]["drive"]["mode"]
+        self.enforce_no_side_slip = bool(self.cfg["robot"]["drive"].get("enforce_no_side_slip", True))
+        self.lateral_damping = float(self.cfg["robot"]["drive"].get("lateral_damping", 1.0))
+        if self.drive_mode not in ("skid_steer", "mecanum"):
+            raise ValueError(f"Unknown robot.drive.mode: {self.drive_mode}")
+        if self.drive_mode == "mecanum":
+            warnings.warn("robot.drive.mode=mecanum is a placeholder; falling back to skid-steer kinematics.")
+
+        self.cylinder_prob = float(self.cfg["world"]["obstacles"].get("cylinder_prob", 0.4))
 
         # IDs
         self.base_qpos_adr = 0  # freejoint is first
@@ -113,25 +126,41 @@ class NeoSkidNavEnv(gym.Env):
 
         # simple renderer (rgb_array)
         self._renderer = None
-        if self.render_mode == "rgb_array":
+        cam_cfg = self.cfg["sensors"]["cameras"]
+        if self.render_mode in ("rgb_array", "depth_array"):
             try:
-                self._renderer = mujoco.Renderer(self.model, height=480, width=640)
+                if self.render_mode == "rgb_array":
+                    width = int(cam_cfg["rgb"]["width"])
+                    height = int(cam_cfg["rgb"]["height"])
+                else:
+                    width = int(cam_cfg["depth"]["width"])
+                    height = int(cam_cfg["depth"]["height"])
+                self._renderer = mujoco.Renderer(self.model, height=height, width=width)
             except Exception:
                 self._renderer = None
 
         seed = int(self.cfg["env"].get("seed", 0))
         self.np_random = np.random.default_rng(seed)
 
-    def _set_mocap_obstacle(self, idx: int, x: float, y: float, z: float, sx: float, sy: float, sz: float):
+    def _set_mocap_obstacle(
+        self, idx: int, x: float, y: float, z: float, sx: float, sy: float, sz: float, shape: str = "box"
+    ):
         mid = self.obs_mocap_ids[idx]
         self.data.mocap_pos[mid] = np.array([x, y, z], dtype=np.float64)
         self.data.mocap_quat[mid] = np.array([1, 0, 0, 0], dtype=np.float64)
         # resize geom in-place (xy half-sizes + z half-size)
         gid = self.obs_geom_ids[idx]
-        self.model.geom_size[gid] = np.array([sx, sy, sz], dtype=np.float64)
+        if shape == "box":
+            self.model.geom_type[gid] = mujoco.mjtGeom.mjGEOM_BOX
+            self.model.geom_size[gid] = np.array([sx, sy, sz], dtype=np.float64)
+        elif shape == "cylinder":
+            self.model.geom_type[gid] = mujoco.mjtGeom.mjGEOM_CYLINDER
+            self.model.geom_size[gid] = np.array([sx, sz, 0.0], dtype=np.float64)
+        else:
+            raise ValueError(f"Unknown obstacle shape: {shape}")
 
     def _hide_obstacle(self, idx: int):
-        self._set_mocap_obstacle(idx, 100.0, 100.0, 0.0, 0.01, 0.01, 0.01)
+        self._set_mocap_obstacle(idx, 100.0, 100.0, 0.0, 0.01, 0.01, 0.01, shape="box")
 
     def _sample_xy(self, arena_x: float, arena_y: float, margin: float) -> Tuple[float, float]:
         x = self.np_random.uniform(-arena_x/2 + margin, arena_x/2 - margin)
@@ -142,17 +171,19 @@ class NeoSkidNavEnv(gym.Env):
         # base freejoint qpos: [x,y,z,qw,qx,qy,qz]
         x, y = self._sample_xy(*self.cfg["world"]["arena_m"], margin=0.8)
         yaw = self.np_random.uniform(-math.pi, math.pi)
-        z = 0.08
+        z = self.wheel_r + 0.001
         qw = math.cos(yaw/2); qz = math.sin(yaw/2)
         qx = 0.0; qy = 0.0
         self.data.qpos[0:7] = np.array([x, y, z, qw, qx, qy, qz], dtype=np.float64)
         self.data.qvel[:] = 0.0
 
     def _set_goal(self, x: float, y: float, yaw: float):
-        # sites are in body-local by default, but this one is attached to base body in xml.
-        # We'll just store goal in env and use site for visualization only.
+        # Goal is stored in env; the site is in world coordinates for visualization only.
         self.goal_xy = np.array([x, y], dtype=np.float64)
         self.goal_yaw = float(yaw)
+        if self.goal_site_id != -1:
+            goal_h = float(self.cfg["world"]["goal"].get("height_m", 0.01))
+            self.model.site_pos[self.goal_site_id] = np.array([x, y, goal_h], dtype=np.float64)
 
     def _get_base_pose(self) -> Tuple[np.ndarray, float]:
         x, y, z = self.data.qpos[0:3]
@@ -171,6 +202,15 @@ class NeoSkidNavEnv(gym.Env):
         margin = float(self.cfg["world"]["obstacles"]["margin_m"])
         count_lo, count_hi = self.cfg["world"]["obstacles"]["count_range"]
         n_obs = int(self.np_random.integers(int(count_lo), int(count_hi) + 1))
+        goal_cfg = self.cfg["world"].get("goal", {})
+        goal_fixed = bool(goal_cfg.get("fixed", False))
+        goal_xy = None
+        goal_yaw = 0.0
+        if goal_fixed:
+            pos = goal_cfg.get("pos_m", [2.0, 0.0])
+            goal_xy = np.array([float(pos[0]), float(pos[1])], dtype=np.float64)
+            goal_yaw = math.radians(float(goal_cfg.get("yaw_deg", 0.0)))
+            goal_clear = float(goal_cfg.get("clearance_m", 0.6))
 
         sx_lo, sx_hi = map(float, self.cfg["world"]["obstacles"]["size_xy_range_m"])
         h = float(self.cfg["world"]["obstacles"]["height_m"])
@@ -189,8 +229,15 @@ class NeoSkidNavEnv(gym.Env):
         for i in range(n_obs):
             for _tries in range(200):
                 x, y = self._sample_xy(arena_x, arena_y, margin)
-                sx = float(self.np_random.uniform(sx_lo/2, sx_hi/2))
-                sy = float(self.np_random.uniform(sx_lo/2, sx_hi/2))
+                shape = "cylinder" if self.np_random.random() < self.cylinder_prob else "box"
+                if shape == "box":
+                    sx = float(self.np_random.uniform(sx_lo/2, sx_hi/2))
+                    sy = float(self.np_random.uniform(sx_lo/2, sx_hi/2))
+                else:
+                    sx = float(self.np_random.uniform(sx_lo/2, sx_hi/2))
+                    sy = sx
+                if goal_xy is not None and np.linalg.norm(np.array([x, y]) - goal_xy) < goal_clear:
+                    continue
                 if np.linalg.norm(np.array([x, y]) - start_xy) < 0.8:
                     continue
                 ok = True
@@ -201,8 +248,13 @@ class NeoSkidNavEnv(gym.Env):
                 if not ok:
                     continue
                 obs_xy.append((x, y, sx, sy))
-                self._set_mocap_obstacle(i, x, y, sz, sx, sy, sz)
+                self._set_mocap_obstacle(i, x, y, sz, sx, sy, sz, shape=shape)
                 break
+
+        # fixed goal
+        if goal_fixed and goal_xy is not None:
+            self._set_goal(goal_xy[0], goal_xy[1], goal_yaw)
+            return
 
         # sample goal away from obstacles
         for _tries in range(500):
@@ -236,7 +288,14 @@ class NeoSkidNavEnv(gym.Env):
             # hidden?
             if abs(ox) > 50 or abs(oy) > 50:
                 continue
-            sx, sy, _sz = self.model.geom_size[self.obs_geom_ids[i]]
+            gid = self.obs_geom_ids[i]
+            gtype = int(self.model.geom_type[gid])
+            gsize = self.model.geom_size[gid]
+            if gtype == int(mujoco.mjtGeom.mjGEOM_CYLINDER):
+                sx = sy = float(gsize[0])
+            else:
+                sx = float(gsize[0])
+                sy = float(gsize[1])
             box_min = np.array([ox - sx, oy - sy], dtype=np.float64)
             box_max = np.array([ox + sx, oy + sy], dtype=np.float64)
             aabbs.append((box_min, box_max))
@@ -310,11 +369,13 @@ class NeoSkidNavEnv(gym.Env):
 
     def _apply_action(self, action: np.ndarray):
         action = np.array(action, dtype=np.float32)
+        action = np.clip(action, -1.0, 1.0)
 
         # optional rate limit
         if self.cfg["control"]["rate_limit"]["enabled"]:
             md = float(self.cfg["control"]["rate_limit"]["max_delta_per_step"])
             action = np.clip(action, self._prev_action - md, self._prev_action + md)
+            action = np.clip(action, -1.0, 1.0)
 
         if self.action_space_mode == "v_w":
             v = float(action[0]) * self.v_max
@@ -344,6 +405,7 @@ class NeoSkidNavEnv(gym.Env):
 
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)
+            self._apply_drive_constraints()
 
         self.steps += 1
 
@@ -351,16 +413,7 @@ class NeoSkidNavEnv(gym.Env):
         dist = float(np.linalg.norm(self.goal_xy - base_xy))
         dyaw = (self.goal_yaw - yaw + math.pi) % (2 * math.pi) - math.pi
 
-        # reward terms
-        progress = self._prev_dist - dist
-        r = 0.0
-        r += float(self.cfg["reward"]["w_progress"]) * progress
-        r += float(self.cfg["reward"]["w_time"])
-        r += float(self.cfg["reward"]["w_smooth"]) * float(np.linalg.norm(self._prev_action))
-
         collided = self._collision_happened()
-        if collided:
-            r += float(self.cfg["reward"]["w_collision"])
 
         # success
         pos_ok = dist <= float(self.cfg["task"]["success"]["pos_tol_m"])
@@ -368,11 +421,17 @@ class NeoSkidNavEnv(gym.Env):
         spd = self._speed_obs()[0]
         stop_ok = spd <= float(self.cfg["task"]["success"]["stop_speed_mps"])
         success = bool(pos_ok and yaw_ok and stop_ok)
-
-        if success:
-            r += float(self.cfg["reward"]["w_goal_bonus"])
+        terms = compute_reward_terms(
+            dist=dist,
+            prev_dist=self._prev_dist,
+            action=self._prev_action,
+            collided=collided,
+            success=success,
+        )
+        r = aggregate_reward(terms, self.cfg)
 
         # stuck check
+        progress = float(terms.get("progress", 0.0))
         min_prog = float(self.cfg["task"]["failure"]["min_progress_m"])
         if progress < min_prog * 0.01:
             self._stuck_counter += 1
@@ -403,14 +462,38 @@ class NeoSkidNavEnv(gym.Env):
             "collision": collided,
             "stuck": stuck,
             "steps": self.steps,
+            "reward_terms": terms,
+            "reward_total": float(r),
         }
         return obs, float(r), terminated, truncated, info
 
     def render(self):
-        if self.render_mode != "rgb_array" or self._renderer is None:
+        if self.render_mode not in ("rgb_array", "depth_array") or self._renderer is None:
             return None
         self._renderer.update_scene(self.data, camera="track")
+        if self.render_mode == "depth_array":
+            return self._renderer.render(depth=True)
         return self._renderer.render()
 
     def close(self):
         self._renderer = None
+
+    def _apply_drive_constraints(self):
+        if self.drive_mode != "skid_steer":
+            return
+        if not self.enforce_no_side_slip:
+            return
+
+        _xy, yaw = self._get_base_pose()
+        vx_world = float(self.data.qvel[0])
+        vy_world = float(self.data.qvel[1])
+        c = math.cos(-yaw)
+        s = math.sin(-yaw)
+        vx_body = c * vx_world - s * vy_world
+        vy_body = s * vx_world + c * vy_world
+        damp = max(0.0, min(1.0, self.lateral_damping))
+        vy_body = vy_body * (1.0 - damp)
+        c2 = math.cos(yaw)
+        s2 = math.sin(yaw)
+        self.data.qvel[0] = c2 * vx_body - s2 * vy_body
+        self.data.qvel[1] = s2 * vx_body + c2 * vy_body

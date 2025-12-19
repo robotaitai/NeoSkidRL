@@ -37,6 +37,7 @@ python -m neoskidrl.scripts.train_sac
 - Termination: success, collision, stuck, or timeout (~10s by default)
 
 Config lives in `config/default.yml` (also packaged under `src/neoskidrl/config/default.yml`).
+Reward terms are computed in code and aggregated via `reward.enabled_terms` + `reward.weights` in the config.
 
 ## Docs
 

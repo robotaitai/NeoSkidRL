@@ -50,7 +50,7 @@ sensors:
 world:
   arena_m: [10.0, 10.0]             # [x, y]
   goal:
-    fixed: false
+    fixed: true
     pos_m: [2.0, 0.0]
     yaw_deg: 0.0
     clearance_m: 0.60

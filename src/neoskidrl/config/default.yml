@@ -17,6 +17,7 @@ robot:
     mode: "skid_steer"            # options: skid_steer | mecanum
     wheel_count: 4
     enforce_no_side_slip: true     # sim intent, not perfect physics guarantee
+    lateral_damping: 0.90          # 0=no damping, 1=full lateral velocity suppression
 
 limits:
   v_max: 1.0
@@ -48,11 +49,18 @@ sensors:
 
 world:
   arena_m: [10.0, 10.0]             # [x, y]
+  goal:
+    fixed: false
+    pos_m: [2.0, 0.0]
+    yaw_deg: 0.0
+    clearance_m: 0.60
+    height_m: 0.01
   obstacles:
     max_count: 30
     count_range: [10, 25]
     size_xy_range_m: [0.20, 0.80]
     height_m: 0.30
+    cylinder_prob: 0.40             # probability of cylinder vs box
     margin_m: 0.25                   # keep spawn away from robot/goal
 
 task:
@@ -66,8 +74,10 @@ task:
     min_progress_m: 0.05
 
 reward:
-  w_progress: 1.0
-  w_time: -0.01
-  w_smooth: -0.05
-  w_collision: -10.0
-  w_goal_bonus: 20.0
+  enabled_terms: ["progress", "time", "smooth", "collision", "goal_bonus"]
+  weights:
+    progress: 1.0
+    time: -0.01
+    smooth: -0.05
+    collision: -10.0
+    goal_bonus: 20.0
