@@ -107,7 +107,8 @@ def run_training_chunks(
 
     train_env = DummyVecEnv([lambda: NeoSkidNavEnv(config_path=config_path, render_mode=None)])
     train_env = VecMonitor(train_env)
-    train_env.reset(seed=seed)
+    train_env.seed(seed)
+    train_env.reset()
 
     model = SAC(
         policy="MlpPolicy",

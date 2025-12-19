@@ -84,6 +84,10 @@ Example eval on the latest checkpoint:
 python -m neoskidrl.scripts.eval --model runs/latest --config config/eval.yml --scenario easy --episodes 3 --headless
 ```
 
+If your eval video looks flat gray, try:
+- `--camera track` (default camera name from the MJCF)
+- setting `MUJOCO_GL=egl` or `MUJOCO_GL=osmesa` in headless mode
+
 ## Docs
 
 - Visual demo: `doc/visual_demo.md`

@@ -131,6 +131,7 @@ class NeoSkidNavEnv(gym.Env):
 
         # simple renderer (rgb_array)
         self._renderer = None
+        self.render_camera = self.cfg.get("sensors", {}).get("cameras", {}).get("render_camera", "track")
         cam_cfg = self.cfg["sensors"]["cameras"]
         if self.render_mode in ("rgb_array", "depth_array"):
             try:
@@ -483,7 +484,8 @@ class NeoSkidNavEnv(gym.Env):
     def render(self):
         if self.render_mode not in ("rgb_array", "depth_array") or self._renderer is None:
             return None
-        self._renderer.update_scene(self.data, camera="track")
+        camera = self.render_camera if self.render_camera else "track"
+        self._renderer.update_scene(self.data, camera=camera)
         if self.render_mode == "depth_array":
             return self._renderer.render(depth=True)
         return self._renderer.render()

@@ -38,6 +38,15 @@ def _normalize_model_path(model_path: str) -> str:
     return model_path[:-4] if model_path.endswith(".zip") else model_path
 
 
+def _ensure_uint8(frame: np.ndarray) -> np.ndarray:
+    if frame.dtype == np.uint8:
+        return frame
+    frame = np.asarray(frame)
+    if frame.max() <= 1.0:
+        frame = frame * 255.0
+    return np.clip(frame, 0, 255).astype(np.uint8)
+
+
 def _build_eval_config(eval_config_path: str, scenario: str) -> tuple[dict, dict]:
     eval_cfg = load_config(eval_config_path)
     base_path = _resolve_base_path(eval_config_path, eval_cfg.get("base_config", "train.yml"))
@@ -62,6 +71,7 @@ def run_eval(
     deterministic: bool = True,
     algo: str = "sac",
     run_id: str | None = None,
+    camera: str | None = None,
 ) -> dict:
     model_path = _normalize_model_path(model_path)
     if headless and "MUJOCO_GL" not in os.environ:
@@ -113,6 +123,8 @@ def run_eval(
     results = []
     for seed in seeds:
         env = NeoSkidNavEnv(config=cfg, render_mode=render_mode)
+        if camera is not None:
+            env.render_camera = camera
         obs, _info = env.reset(seed=seed)
 
         writer = None
@@ -122,7 +134,7 @@ def run_eval(
             writer = imageio.get_writer(str(video_path), fps=video_fps)
             frame = env.render()
             if frame is not None:
-                writer.append_data(frame)
+                writer.append_data(_ensure_uint8(frame))
 
         done = False
         ep_return = 0.0
@@ -148,7 +160,7 @@ def run_eval(
             if writer is not None:
                 frame = env.render()
                 if frame is not None:
-                    writer.append_data(frame)
+                    writer.append_data(_ensure_uint8(frame))
             done = term or trunc
 
         if writer is not None:
@@ -207,6 +219,7 @@ def main() -> None:
     parser.add_argument("--stochastic", action="store_true", help="Use stochastic actions.")
     parser.add_argument("--no-video", action="store_true", help="Disable MP4 recording.")
     parser.add_argument("--run-id", default=None, help="Optional run id for output folders.")
+    parser.add_argument("--camera", default=None, help="Camera name from the MJCF (default: track).")
     args = parser.parse_args()
 
     seeds = None
@@ -226,6 +239,7 @@ def main() -> None:
         deterministic=not args.stochastic,
         algo=args.algo,
         run_id=args.run_id,
+        camera=args.camera,
     )
     print(json.dumps(summary, indent=2))
 

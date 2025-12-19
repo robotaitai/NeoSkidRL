@@ -32,6 +32,7 @@ def test_run_eval_headless_metrics(tmp_path):
         headless=True,
         deterministic=True,
         algo="sac",
+        camera="track",
     )
 
     assert summary["episodes"] == 1
