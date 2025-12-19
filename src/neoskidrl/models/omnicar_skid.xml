@@ -1,0 +1,79 @@
+<mujoco model="omnicar_skid">
+  <compiler angle="degree" coordinate="local"/>
+  <option timestep="0.02" gravity="0 0 -9.81" iterations="50"/>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="20 20 0.1" rgba="0.92 0.92 0.92 1" friction="1.2 0.005 0.0001"/>
+
+    <!-- Robot -->
+    <body name="base" pos="0 0 0.08">
+      <freejoint/>
+      <geom name="chassis" type="box" size="0.15 0.10 0.02" rgba="0.12 0.12 0.12 1" density="250"/>
+
+      <!-- Wheels: cylinder axis along Y (left-right), so rotate cylinder 90deg about X -->
+      <body name="wheel_fl" pos="0.105 0.101 0.00">
+        <joint name="wheel_fl_hinge" type="hinge" axis="0 1 0"/>
+        <geom name="wheel_fl_geom" type="cylinder" size="0.0485 0.020" euler="90 0 0" rgba="0.2 0.2 0.2 1" friction="2.0 0.005 0.0001"/>
+      </body>
+
+      <body name="wheel_fr" pos="0.105 -0.101 0.00">
+        <joint name="wheel_fr_hinge" type="hinge" axis="0 1 0"/>
+        <geom name="wheel_fr_geom" type="cylinder" size="0.0485 0.020" euler="90 0 0" rgba="0.2 0.2 0.2 1" friction="2.0 0.005 0.0001"/>
+      </body>
+
+      <body name="wheel_rl" pos="-0.105 0.101 0.00">
+        <joint name="wheel_rl_hinge" type="hinge" axis="0 1 0"/>
+        <geom name="wheel_rl_geom" type="cylinder" size="0.0485 0.020" euler="90 0 0" rgba="0.2 0.2 0.2 1" friction="2.0 0.005 0.0001"/>
+      </body>
+
+      <body name="wheel_rr" pos="-0.105 -0.101 0.00">
+        <joint name="wheel_rr_hinge" type="hinge" axis="0 1 0"/>
+        <geom name="wheel_rr_geom" type="cylinder" size="0.0485 0.020" euler="90 0 0" rgba="0.2 0.2 0.2 1" friction="2.0 0.005 0.0001"/>
+      </body>
+
+      <site name="goal" pos="2 0 0.01" size="0.06" rgba="0 0.9 0 0.5"/>
+      <camera name="track" mode="trackcom" pos="0 -3 1.5" xyaxes="1 0 0 0 1 0"/>
+    </body>
+
+    <!-- Kinematic obstacles (mocap bodies). We'll move/resize them from Python. -->
+    <!-- Default placed far away. -->
+    <!-- 30 obstacles -->
+    <body name="obs_00" mocap="true" pos="100 100 0"><geom name="obs_00_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_01" mocap="true" pos="100 100 0"><geom name="obs_01_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_02" mocap="true" pos="100 100 0"><geom name="obs_02_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_03" mocap="true" pos="100 100 0"><geom name="obs_03_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_04" mocap="true" pos="100 100 0"><geom name="obs_04_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_05" mocap="true" pos="100 100 0"><geom name="obs_05_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_06" mocap="true" pos="100 100 0"><geom name="obs_06_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_07" mocap="true" pos="100 100 0"><geom name="obs_07_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_08" mocap="true" pos="100 100 0"><geom name="obs_08_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_09" mocap="true" pos="100 100 0"><geom name="obs_09_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_10" mocap="true" pos="100 100 0"><geom name="obs_10_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_11" mocap="true" pos="100 100 0"><geom name="obs_11_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_12" mocap="true" pos="100 100 0"><geom name="obs_12_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_13" mocap="true" pos="100 100 0"><geom name="obs_13_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_14" mocap="true" pos="100 100 0"><geom name="obs_14_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_15" mocap="true" pos="100 100 0"><geom name="obs_15_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_16" mocap="true" pos="100 100 0"><geom name="obs_16_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_17" mocap="true" pos="100 100 0"><geom name="obs_17_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_18" mocap="true" pos="100 100 0"><geom name="obs_18_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_19" mocap="true" pos="100 100 0"><geom name="obs_19_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_20" mocap="true" pos="100 100 0"><geom name="obs_20_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_21" mocap="true" pos="100 100 0"><geom name="obs_21_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_22" mocap="true" pos="100 100 0"><geom name="obs_22_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_23" mocap="true" pos="100 100 0"><geom name="obs_23_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_24" mocap="true" pos="100 100 0"><geom name="obs_24_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_25" mocap="true" pos="100 100 0"><geom name="obs_25_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_26" mocap="true" pos="100 100 0"><geom name="obs_26_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_27" mocap="true" pos="100 100 0"><geom name="obs_27_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_28" mocap="true" pos="100 100 0"><geom name="obs_28_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+    <body name="obs_29" mocap="true" pos="100 100 0"><geom name="obs_29_geom" type="box" size="0.3 0.3 0.15" rgba="0.5 0.5 0.55 1"/></body>
+  </worldbody>
+
+  <actuator>
+    <velocity name="act_fl" joint="wheel_fl_hinge" kv="1"/>
+    <velocity name="act_fr" joint="wheel_fr_hinge" kv="1"/>
+    <velocity name="act_rl" joint="wheel_rl_hinge" kv="1"/>
+    <velocity name="act_rr" joint="wheel_rr_hinge" kv="1"/>
+  </actuator>
+</mujoco>
