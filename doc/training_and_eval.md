@@ -80,3 +80,13 @@ It includes per-episode and summary metrics:
 - smoothness: sum of `|Δaction|` across the episode
 
 You can compare these across SAC vs PPO by running `eval` with `--algo sac` and `--algo ppo` and reading the metrics files.
+
+### Metrics reader
+
+To summarize multiple runs in a table:
+
+```bash
+python -m neoskidrl.scripts.read_metrics runs/eval_videos
+```
+
+It scans for `metrics.json` and prints a simple table grouped by scenario and algo.

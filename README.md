@@ -46,6 +46,12 @@ pip install -e .[train,video]
 python -m neoskidrl.scripts.eval --algo ppo --model runs/train/<run_name>/model.zip --config config/eval.yml --scenario easy
 ```
 
+Metrics summary:
+
+```bash
+python -m neoskidrl.scripts.read_metrics runs/eval_videos
+```
+
 ## Environment
 
 - Gymnasium env: `neoskidrl.envs.NeoSkidNavEnv`
