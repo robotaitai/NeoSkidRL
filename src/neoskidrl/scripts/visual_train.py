@@ -209,7 +209,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train SAC and periodically visualize progress.")
     parser.add_argument("--config", default="config/default.yml", help="Path to config YAML.")
     parser.add_argument("--total-steps", type=int, default=200_000)
-    parser.add_argument("--chunk-steps", type=int, default=20_000)
+    parser.add_argument("--chunk-steps", type=int, default=10_000, help="Steps per chunk (default: 10k for more frequent checkpoints)")
     parser.add_argument("--rollout-steps", type=int, default=400)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--run-name", default=None, help="Run name (auto-generated if not provided).")

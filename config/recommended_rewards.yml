@@ -78,32 +78,36 @@ task:
 
 # RECOMMENDED WEIGHTS for "get it to learn" phase
 reward:
-  enabled_terms: ["progress", "time", "smooth", "collision", "goal_bonus", "stuck", "clearance"]
+  enabled_terms: ["progress", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
   weights:
     # Dense signal: Make progress the main driver
-    progress: 10.0                # Strong positive for moving toward goal
+    progress: 15.0                # Even stronger positive for moving toward goal
     
     # Sparse rewards/penalties
-    goal_bonus: 75.0              # BIG sparse reward for success
-    collision: -75.0              # Strong collision penalty
-    stuck: -25.0                  # Penalty for getting stuck
+    goal_bonus: 100.0             # VERY BIG sparse reward for success
+    collision: -50.0              # Moderate collision penalty (not too scary)
+    stuck: -20.0                  # Penalty for getting stuck
     
-    # Shaping rewards (keep small)
-    clearance: -0.5               # Gentle guidance to avoid obstacles
-    smooth: -0.05                 # Small smoothness penalty (polish, not learning)
-    time: -0.01                   # Tiny time penalty (don't drown learning signal)
+    # Shaping rewards (DISABLED initially - enable after first successes)
+    clearance: 0.0                # DISABLED - was causing robot to freeze
+    smooth: 0.0                   # DISABLED - not needed for learning
+    time: -0.005                  # Very tiny time penalty
 
 # Notes:
-# - Progress is 10x original (main learning signal)
-# - Goal bonus is 75 (was 20) - makes agent care about success
-# - Collision is -75 (was -10) - stronger avoidance
-# - Added stuck penalty -25
-# - Added clearance -0.5 for obstacle awareness
-# - Time penalty kept tiny (-0.01) so it doesn't drown learning
-# - Smoothness kept small (-0.05) for polish
+# - Progress is 15 (main learning signal - VERY STRONG)
+# - Goal bonus is 100 (was 20) - makes agent REALLY care about success
+# - Collision is -50 (was -10) - moderate penalty (not too scary)
+# - Stuck penalty -20 to prevent freezing
+# - Clearance DISABLED (0.0) - was causing robot to freeze!
+# - Smoothness DISABLED (0.0) - not needed for initial learning
+# - Time penalty very tiny (-0.005) so it doesn't drown learning
+#
+# Robot should now MOVE and try to reach goal!
 #
 # After you see consistent successes (>30%), you can:
-# - Reduce goal_bonus to 40-50
-# - Increase smooth to -0.1 or -0.2
+# - Enable clearance: -0.3 (start small)
+# - Enable smooth: -0.05 (for polish)
+# - Reduce goal_bonus to 50-60
+# - Increase collision to -75
 # - Tighten success tolerances
 
