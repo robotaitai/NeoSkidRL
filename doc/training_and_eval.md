@@ -87,6 +87,16 @@ Default is `front` (on-vehicle). You can override per-run with:
 python -m neoskidrl.scripts.eval --model runs/latest --config config/eval.yml --scenario easy --camera track
 ```
 
+## MuJoCo viewer (no video)
+
+To see the full MuJoCo scene with your latest policy:
+
+```bash
+python -m neoskidrl.scripts.view_policy --model runs/latest --config config/eval.yml --scenario medium
+```
+
+This opens the native MuJoCo viewer and runs the policy live.
+
 ### PPO evaluation
 
 ```bash

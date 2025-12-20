@@ -88,6 +88,12 @@ If your eval video looks flat gray, try:
 - `--camera track` (default camera name from the MJCF)
 - setting `MUJOCO_GL=egl` or `MUJOCO_GL=osmesa` in headless mode
 
+View the policy in the MuJoCo viewer (no video):
+
+```bash
+python -m neoskidrl.scripts.view_policy --model runs/latest --config config/eval.yml --scenario medium
+```
+
 ## Docs
 
 - Visual demo: `doc/visual_demo.md`
