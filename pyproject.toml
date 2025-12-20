@@ -30,6 +30,12 @@ test = [
 video = [
   "imageio[ffmpeg]>=2.31",
 ]
+ui = [
+  "streamlit>=1.30",
+  "pandas>=2.0",
+  "altair>=5.0",
+  "streamlit-autorefresh>=1.0.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

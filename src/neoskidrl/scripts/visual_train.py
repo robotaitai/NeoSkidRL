@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from neoskidrl.utils import generate_run_name
+
 
 def _lidar_points(obs: np.ndarray, rays: int, lidar_range: float) -> tuple[np.ndarray, np.ndarray, float, float]:
     ranges = obs[:rays] * lidar_range
@@ -85,6 +87,7 @@ def run_training_chunks(
     chunk_steps: int,
     rollout_steps: int,
     seed: int,
+    run_name: str,
     logdir: str,
     checkpoint_dir: str,
     latest_path: str,
@@ -93,6 +96,12 @@ def run_training_chunks(
     headless: bool,
     device: str,
     enable_viz: bool,
+    num_envs: int = 1,
+    batch_size: int = 256,
+    buffer_size: int = 200_000,
+    learning_rate: float = 3e-4,
+    ent_coef: str | float = "auto",
+    target_entropy: str | float = "auto",
 ):
     if headless and "MUJOCO_GL" not in os.environ:
         os.environ["MUJOCO_GL"] = "egl"
@@ -104,29 +113,67 @@ def run_training_chunks(
         raise RuntimeError("stable-baselines3 not installed. Use `pip install -e .[train]`.") from exc
 
     from neoskidrl.envs import NeoSkidNavEnv
+    from neoskidrl.train.callbacks import EpisodeJSONLLogger
 
-    train_env = DummyVecEnv([lambda: NeoSkidNavEnv(config_path=config_path, render_mode=None)])
+    print(f"\n{'='*60}")
+    print(f"🚀 Starting training run: {run_name}")
+    print(f"{'='*60}\n")
+    
+    print(f"Creating {num_envs} parallel training environments...")
+    train_env = DummyVecEnv([lambda: NeoSkidNavEnv(config_path=config_path, render_mode=None) 
+                             for _ in range(num_envs)])
     train_env = VecMonitor(train_env)
     train_env.seed(seed)
     train_env.reset()
 
-    model = SAC(
-        policy="MlpPolicy",
-        env=train_env,
-        verbose=1,
-        tensorboard_log=logdir,
-        learning_rate=3e-4,
-        buffer_size=200_000,
-        batch_size=256,
-        gamma=0.99,
-        train_freq=1,
-        gradient_steps=1,
-        device=device,
-    )
+    # Build SAC model with configurable entropy
+    sac_kwargs = {
+        "policy": "MlpPolicy",
+        "env": train_env,
+        "verbose": 1,
+        "tensorboard_log": logdir,
+        "learning_rate": learning_rate,
+        "buffer_size": buffer_size,
+        "batch_size": batch_size,
+        "gamma": 0.99,
+        "train_freq": 1,
+        "gradient_steps": 1,
+        "device": device,
+    }
+    
+    # Add entropy coefficient (auto or fixed value)
+    if ent_coef != "auto":
+        sac_kwargs["ent_coef"] = float(ent_coef)
+    else:
+        sac_kwargs["ent_coef"] = "auto"
+    
+    # Add target entropy if specified
+    if target_entropy != "auto":
+        sac_kwargs["target_entropy"] = float(target_entropy)
+    
+    print(f"SAC entropy config: ent_coef={ent_coef}, target_entropy={target_entropy}")
+    
+    model = SAC(**sac_kwargs)
 
     viz_env = None
     if enable_viz:
         viz_env = NeoSkidNavEnv(config_path=config_path, render_mode="rgb_array")
+
+    # Setup episode logger for reward dashboard
+    episode_logger = EpisodeJSONLLogger(
+        output_path="runs/metrics/episodes.jsonl",
+        run_id=run_name,  # Use the generated run name
+        algo="SAC",
+        seed=seed,
+        verbose=1,
+    )
+    
+    print(f"\n📊 Logging:")
+    print(f"  Run ID: {run_name}")
+    print(f"  Tensorboard: {logdir}")
+    print(f"  Episodes: runs/metrics/episodes.jsonl")
+    print(f"  Checkpoints: {checkpoint_dir}")
+    print(f"  Latest: {latest_path}\n")
 
     steps_done = 0
     latest = Path(latest_path)
@@ -139,6 +186,7 @@ def run_training_chunks(
                 reset_num_timesteps=False,
                 progress_bar=True,
                 log_interval=10,
+                callback=episode_logger,
             )
             steps_done += chunk
             _save_checkpoint(model, checkpoint_dir, latest, steps_done)
@@ -164,6 +212,13 @@ def main() -> None:
     parser.add_argument("--chunk-steps", type=int, default=20_000)
     parser.add_argument("--rollout-steps", type=int, default=400)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--run-name", default=None, help="Run name (auto-generated if not provided).")
+    parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environments.")
+    parser.add_argument("--batch-size", type=int, default=256, help="Batch size for SAC training.")
+    parser.add_argument("--buffer-size", type=int, default=200_000, help="Replay buffer size.")
+    parser.add_argument("--learning-rate", type=float, default=3e-4, help="Learning rate for SAC.")
+    parser.add_argument("--ent-coef", default="auto", help="Entropy coefficient ('auto' or float, e.g. 0.1).")
+    parser.add_argument("--target-entropy", default="auto", help="Target entropy ('auto' or float, e.g. -1.0).")
     parser.add_argument("--logdir", default="runs/tb")
     parser.add_argument("--model-out", default="runs/final")
     parser.add_argument("--checkpoint-dir", default="runs/checkpoints")
@@ -172,6 +227,18 @@ def main() -> None:
     parser.add_argument("--headless", action="store_true", help="Set MUJOCO_GL=egl for offscreen rendering.")
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
+    
+    # Generate run name if not provided
+    if args.run_name is None:
+        run_name = generate_run_name(prefix="sac")
+    else:
+        run_name = args.run_name
+    
+    # Update paths to include run name
+    logdir = f"{args.logdir}/{run_name}"
+    checkpoint_dir = f"{args.checkpoint_dir}/{run_name}"
+    latest_path = f"{args.latest_path}/{run_name}"
+    model_out = f"{args.model_out}/{run_name}"
 
     run_training_chunks(
         config_path=args.config,
@@ -179,14 +246,21 @@ def main() -> None:
         chunk_steps=args.chunk_steps,
         rollout_steps=args.rollout_steps,
         seed=args.seed,
-        logdir=args.logdir,
-        checkpoint_dir=args.checkpoint_dir,
-        latest_path=args.latest_path,
-        model_out=args.model_out,
+        run_name=run_name,
+        logdir=logdir,
+        checkpoint_dir=checkpoint_dir,
+        latest_path=latest_path,
+        model_out=model_out,
         fps=args.fps,
         headless=args.headless,
         device=args.device,
         enable_viz=True,
+        num_envs=args.num_envs,
+        batch_size=args.batch_size,
+        buffer_size=args.buffer_size,
+        learning_rate=args.learning_rate,
+        ent_coef=args.ent_coef,
+        target_entropy=args.target_entropy,
     )
 
 

@@ -433,17 +433,9 @@ class NeoSkidNavEnv(gym.Env):
         spd = self._speed_obs()[0]
         stop_ok = spd <= float(self.cfg["task"]["success"]["stop_speed_mps"])
         success = bool(pos_ok and yaw_ok and stop_ok)
-        terms = compute_reward_terms(
-            dist=dist,
-            prev_dist=self._prev_dist,
-            action=self._prev_action,
-            collided=collided,
-            success=success,
-        )
-        r = aggregate_reward(terms, self.cfg)
-
-        # stuck check
-        progress = float(terms.get("progress", 0.0))
+        
+        # stuck check (compute before rewards to pass to reward function)
+        progress = float(self._prev_dist - dist if self._prev_dist is not None else 0.0)
         min_prog = float(self.cfg["task"]["failure"]["min_progress_m"])
         if progress < min_prog * 0.01:
             self._stuck_counter += 1
@@ -451,6 +443,24 @@ class NeoSkidNavEnv(gym.Env):
             self._stuck_counter = 0
 
         stuck = self._stuck_counter >= self._stuck_limit_steps
+        
+        # Compute lidar for min distance (clearance reward)
+        lidar_normalized = self._compute_lidar()
+        min_lidar_norm = float(np.min(lidar_normalized))
+        min_lidar = min_lidar_norm * self.lidar_range  # Convert back to meters
+        
+        # Compute rewards with enhanced terms
+        terms = compute_reward_terms(
+            dist=dist,
+            prev_dist=self._prev_dist,
+            action=action,
+            collided=collided,
+            success=success,
+            stuck=stuck,
+            min_lidar=min_lidar,
+            prev_action=self._prev_action,
+        )
+        r = aggregate_reward(terms, self.cfg)
 
         terminated = False
         truncated = False
@@ -466,6 +476,7 @@ class NeoSkidNavEnv(gym.Env):
             truncated = True
 
         self._prev_dist = dist
+        self._prev_action = action.copy()  # Save for next step's smoothness reward
         obs = self._get_obs()
         info = {
             "dist": dist,

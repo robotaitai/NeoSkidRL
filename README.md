@@ -25,6 +25,22 @@ pip install -e .[train]
 python -m neoskidrl.scripts.train --algo sac --config config/train.yml --num-envs 64 --headless
 ```
 
+Visual training with periodic checkpoints and visualization:
+
+```bash
+pip install -e .[train]
+python -m neoskidrl.scripts.visual_train \
+  --config config/recommended_rewards.yml \
+  --num-envs 16 \
+  --total-steps 300000 \
+  --chunk-steps 20000 \
+  --batch-size 512 \
+  --ent-coef 0.1 \
+  --headless
+```
+
+Each run gets a unique name like `sac_swift-falcon_20231220_143052` for easy tracking!
+
 Headless PPO training (optional dependency):
 
 ```bash
@@ -93,6 +109,31 @@ View the policy in the MuJoCo viewer (no video):
 ```bash
 python -m neoskidrl.scripts.view_policy --model runs/latest --config config/eval.yml --scenario medium --bev --follow
 ```
+
+## Reward Dashboard
+
+Monitor training progress and tune reward weights in real-time with the Streamlit dashboard:
+
+```bash
+pip install -e .[train,ui]
+streamlit run src/neoskidrl/ui/reward_dashboard.py
+```
+
+The dashboard provides:
+- **Real-time metrics**: Success rate, collision rate, stuck rate, average return
+- **Episode charts**: Returns over time, reward term contributions
+- **Weight tuning**: Interactive sliders to adjust reward weights
+- **Config management**: Save weights back to YAML configs
+- **Video display**: Shows latest evaluation videos
+- **Auto-refresh**: Updates every 2 seconds during training
+
+Episode data is automatically logged to `runs/metrics/episodes.jsonl` when using `visual_train.py`.
+
+Dashboard features:
+- Filter episodes by run_id
+- View last N episodes
+- Stacked area chart showing weighted reward term contributions
+- Save modified weights to existing config or create new config variants
 
 ## Docs
 

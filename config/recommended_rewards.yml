@@ -1,0 +1,109 @@
+# Recommended reward configuration for better learning
+# Based on RL navigation best practices
+
+env:
+  seed: 0
+  dt: 0.02
+  episode_sec: 10.0
+  frame_skip: 1
+
+robot:
+  length_m: 0.307
+  width_m: 0.247
+  wheel_diameter_m: 0.097
+  wheel_radius_m: 0.0485
+  wheelbase_m: 0.210
+  track_m: 0.202
+
+  drive:
+    mode: "skid_steer"
+    wheel_count: 4
+    enforce_no_side_slip: true
+    lateral_damping: 0.90
+
+limits:
+  v_max: 1.0
+  w_max: 2.0
+  wheel_vel_max: 30.0
+
+control:
+  action_space: "v_w"
+  rate_limit:
+    enabled: true
+    max_delta_per_step: 0.20
+
+sensors:
+  lidar:
+    enabled: true
+    rays: 360
+    range_m: 10.0
+  cameras:
+    render_camera: "track"
+    rgb:
+      enabled: true
+      width: 320
+      height: 240
+      fov_deg: 90
+    depth:
+      enabled: true
+      width: 320
+      height: 240
+      fov_deg: 90
+
+world:
+  arena_m: [6.0, 6.0]
+  goal:
+    fixed: true
+    pos_m: [2.0, 0.0]
+    yaw_deg: 0.0
+    clearance_m: 0.60
+    height_m: 0.01
+  obstacles:
+    max_count: 60
+    count_range: [20, 40]
+    size_xy_range_m: [0.30, 1.20]
+    height_m: 0.40
+    cylinder_prob: 0.40
+    margin_m: 0.25
+
+task:
+  success:
+    pos_tol_m: 0.30               # Relaxed from 0.20 for easier early success
+    yaw_tol_deg: 30.0             # Relaxed from 10.0 (too strict!)
+    stop_speed_mps: 0.15          # Slightly relaxed
+  failure:
+    collision: true
+    stuck_sec: 1.5
+    min_progress_m: 0.05
+
+# RECOMMENDED WEIGHTS for "get it to learn" phase
+reward:
+  enabled_terms: ["progress", "time", "smooth", "collision", "goal_bonus", "stuck", "clearance"]
+  weights:
+    # Dense signal: Make progress the main driver
+    progress: 10.0                # Strong positive for moving toward goal
+    
+    # Sparse rewards/penalties
+    goal_bonus: 75.0              # BIG sparse reward for success
+    collision: -75.0              # Strong collision penalty
+    stuck: -25.0                  # Penalty for getting stuck
+    
+    # Shaping rewards (keep small)
+    clearance: -0.5               # Gentle guidance to avoid obstacles
+    smooth: -0.05                 # Small smoothness penalty (polish, not learning)
+    time: -0.01                   # Tiny time penalty (don't drown learning signal)
+
+# Notes:
+# - Progress is 10x original (main learning signal)
+# - Goal bonus is 75 (was 20) - makes agent care about success
+# - Collision is -75 (was -10) - stronger avoidance
+# - Added stuck penalty -25
+# - Added clearance -0.5 for obstacle awareness
+# - Time penalty kept tiny (-0.01) so it doesn't drown learning
+# - Smoothness kept small (-0.05) for polish
+#
+# After you see consistent successes (>30%), you can:
+# - Reduce goal_bonus to 40-50
+# - Increase smooth to -0.1 or -0.2
+# - Tighten success tolerances
+

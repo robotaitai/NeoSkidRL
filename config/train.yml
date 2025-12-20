@@ -49,7 +49,7 @@ sensors:
       fov_deg: 90
 
 world:
-  arena_m: [10.0, 10.0]             # [x, y]
+  arena_m: [6.0, 6.0]               # [x, y]
   goal:
     fixed: false
     pos_m: [2.0, 0.0]
@@ -57,10 +57,10 @@ world:
     clearance_m: 0.60
     height_m: 0.01
   obstacles:
-    max_count: 30
-    count_range: [10, 25]
-    size_xy_range_m: [0.20, 0.80]
-    height_m: 0.30
+    max_count: 60
+    count_range: [20, 40]
+    size_xy_range_m: [0.30, 1.20]
+    height_m: 0.40
     cylinder_prob: 0.40             # probability of cylinder vs box
     margin_m: 0.25                   # keep spawn away from robot/goal
 
