@@ -38,9 +38,16 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, default=2000)
     parser.add_argument("--sleep", type=float, default=0.0, help="Optional sleep per step.")
+    parser.add_argument("--show-ui", action="store_true", help="Show MuJoCo UI panels.")
+    parser.add_argument("--bev", action="store_true", help="Start in bird's-eye view.")
+    parser.add_argument("--bev-distance", type=float, default=6.0)
+    parser.add_argument("--bev-elevation", type=float, default=-90.0)
+    parser.add_argument("--bev-azimuth", type=float, default=90.0)
+    parser.add_argument("--follow", action="store_true", help="Keep camera centered on the robot.")
     args = parser.parse_args()
 
     try:
+        import mujoco
         import mujoco.viewer
     except Exception as exc:  # pragma: no cover - requires viewer
         raise RuntimeError("mujoco.viewer is not available (no GUI).") from exc
@@ -62,12 +69,23 @@ def main() -> None:
     else:
         model = PPO.load(model_path)
 
-    with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
+    show_ui = bool(args.show_ui)
+    with mujoco.viewer.launch_passive(env.model, env.data, show_left_ui=show_ui, show_right_ui=show_ui) as viewer:
+        if args.bev:
+            base_xy = _info.get("base_xy") if _info is not None else None
+            if base_xy is not None:
+                viewer.cam.lookat[:] = [float(base_xy[0]), float(base_xy[1]), 0.0]
+            viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+            viewer.cam.distance = float(args.bev_distance)
+            viewer.cam.elevation = float(args.bev_elevation)
+            viewer.cam.azimuth = float(args.bev_azimuth)
         for _ in range(args.steps):
             if not viewer.is_running():
                 break
             action, _state = model.predict(obs, deterministic=True)
             obs, _r, term, trunc, _info = env.step(action)
+            if args.follow and _info is not None and "base_xy" in _info:
+                viewer.cam.lookat[:] = [float(_info["base_xy"][0]), float(_info["base_xy"][1]), 0.0]
             if term or trunc:
                 obs, _info = env.reset()
             viewer.sync()

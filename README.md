@@ -91,7 +91,7 @@ If your eval video looks flat gray, try:
 View the policy in the MuJoCo viewer (no video):
 
 ```bash
-python -m neoskidrl.scripts.view_policy --model runs/latest --config config/eval.yml --scenario medium
+python -m neoskidrl.scripts.view_policy --model runs/latest --config config/eval.yml --scenario medium --bev --follow
 ```
 
 ## Docs

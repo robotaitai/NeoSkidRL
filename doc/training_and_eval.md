@@ -92,10 +92,11 @@ python -m neoskidrl.scripts.eval --model runs/latest --config config/eval.yml --
 To see the full MuJoCo scene with your latest policy:
 
 ```bash
-python -m neoskidrl.scripts.view_policy --model runs/latest --config config/eval.yml --scenario medium
+python -m neoskidrl.scripts.view_policy --model runs/latest --config config/eval.yml --scenario medium --bev --follow
 ```
 
 This opens the native MuJoCo viewer and runs the policy live.
+Use `--show-ui` if you want the left/right MuJoCo panels visible.
 
 ### PPO evaluation
 
