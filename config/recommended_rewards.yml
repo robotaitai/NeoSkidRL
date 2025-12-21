@@ -5,7 +5,7 @@ env:
   seed: 0
   dt: 0.02
   episode_sec: 10.0
-  frame_skip: 1
+  frame_skip: 4
 
 robot:
   length_m: 0.307
@@ -60,7 +60,7 @@ world:
     height_m: 0.01
   obstacles:
     max_count: 25
-    count_range: [5, 15] # reduced from 20-40 to 5-20 for easier learning
+    count_range: [15, 25] # reduced from 20-40 to 5-20 for easier learning
     size_xy_range_m: [0.10, 1.20]
     height_m: 0.40
     cylinder_prob: 0.40
