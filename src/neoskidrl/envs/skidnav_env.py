@@ -412,20 +412,15 @@ class NeoSkidNavEnv(gym.Env):
         }
         return obs, info
 
-    def _apply_action(self, action: np.ndarray):
+    def _apply_action(self, action: np.ndarray, prev_action: np.ndarray) -> np.ndarray:
         action = np.array(action, dtype=np.float32)
         action = np.clip(action, -1.0, 1.0)
-        prev_applied = (
-            self._applied_action.copy()
-            if self._applied_action is not None
-            else np.zeros((self.action_space.shape[0],), dtype=np.float32)
-        )
         applied = action.copy()
 
         # optional rate limit
         if self.cfg["control"]["rate_limit"]["enabled"]:
             md = float(self.cfg["control"]["rate_limit"]["max_delta_per_step"])
-            applied = np.clip(applied, prev_applied - md, prev_applied + md)
+            applied = np.clip(applied, prev_action - md, prev_action + md)
             applied = np.clip(applied, -1.0, 1.0)
 
         if self.action_space_mode == "v_w":
@@ -449,11 +444,17 @@ class NeoSkidNavEnv(gym.Env):
             ws = np.clip(ws, -self.wheel_vel_max, self.wheel_vel_max)
             self.data.ctrl[:] = ws
 
-        self._prev_applied_action = prev_applied
-        self._applied_action = applied
+        return applied
 
     def step(self, action):
-        self._apply_action(action)
+        prev_applied_action = (
+            self._prev_applied_action.copy()
+            if self._prev_applied_action is not None
+            else np.zeros((self.action_space.shape[0],), dtype=np.float32)
+        )
+        prev_goal_angle = self._prev_goal_angle
+        applied = self._apply_action(action, prev_applied_action)
+        self._applied_action = applied
 
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)
@@ -478,7 +479,6 @@ class NeoSkidNavEnv(gym.Env):
         # stuck check (compute before rewards to pass to reward function)
         v = float(spd_obs[0])
         wz = float(spd_obs[1])
-        applied = self._applied_action if self._applied_action is not None else np.zeros((self.action_space.shape[0],), dtype=np.float32)
         cmd_mag = float(np.linalg.norm(applied))
         trying_to_move = cmd_mag > 0.2
         not_moving = v < 0.03 and abs(wz) < 0.10
@@ -496,7 +496,12 @@ class NeoSkidNavEnv(gym.Env):
         
         goal_obs = self._goal_obs()
         goal_angle = float(math.atan2(goal_obs[1], goal_obs[0]))
-        dt_step = float(self.dt * self.frame_skip)
+        vx_world = float(self.data.qvel[0])
+        vy_world = float(self.data.qvel[1])
+        c = math.cos(-yaw)
+        s = math.sin(-yaw)
+        vx_body = c * vx_world - s * vy_world
+        vy_body = s * vx_world + c * vy_world
 
         # Compute rewards with enhanced terms
         terms = compute_reward_terms(
@@ -509,9 +514,11 @@ class NeoSkidNavEnv(gym.Env):
             min_lidar=min_lidar,
             prev_action=self._prev_applied_action,
             goal_angle=goal_angle,
-            prev_goal_angle=self._prev_goal_angle,
-            speed_v=float(spd_obs[0]),
-            dt_step=dt_step,
+            prev_goal_angle=prev_goal_angle,
+            vx_body=vx_body,
+            vy_body=vy_body,
+            v_max=self.v_max,
+            d_slow=float(self.cfg.get("reward", {}).get("velocity_dslow_m", 1.0)),
         )
         reward_contrib = compute_reward_contributions(terms, self.cfg)
         r = aggregate_reward(terms, self.cfg)
@@ -531,6 +538,7 @@ class NeoSkidNavEnv(gym.Env):
 
         self._prev_dist = dist
         self._prev_goal_angle = goal_angle
+        self._prev_applied_action = applied.copy()
         obs = self._get_obs(lidar_override=lidar_normalized)
         info = {
             "dist": dist,
@@ -539,6 +547,9 @@ class NeoSkidNavEnv(gym.Env):
             "collision": collided,
             "stuck": stuck,
             "timeout": truncated,
+            "pos_ok": pos_ok,
+            "yaw_ok": yaw_ok,
+            "stop_ok": stop_ok,
             "steps": self.steps,
             "reward_terms": terms,
             "reward_contrib": reward_contrib,

@@ -19,13 +19,13 @@ def _make_env(config_path: str, render_mode: str | None = None):
     return _init
 
 
-def _lidar_points(obs: np.ndarray, rays: int, lidar_range: float) -> tuple[np.ndarray, np.ndarray, float, float]:
+def _lidar_points(obs: np.ndarray, rays: int, lidar_range: float) -> tuple[np.ndarray, np.ndarray, float, float, float]:
     ranges = obs[:rays] * lidar_range
     angles = np.linspace(-np.pi, np.pi, rays, endpoint=False)
     xs = ranges * np.cos(angles)
     ys = ranges * np.sin(angles)
-    dx, dy, _dyaw = obs[rays:rays + 3]
-    return xs, ys, float(dx), float(dy)
+    dx, dy, dyaw = obs[rays:rays + 3]
+    return xs, ys, float(dx), float(dy), float(dyaw)
 
 
 def _run_live_rollout(env, model, steps: int, fps: float, seed: int | None) -> None:
@@ -43,7 +43,7 @@ def _run_live_rollout(env, model, steps: int, fps: float, seed: int | None) -> N
 
     rays = int(env.rays)
     lidar_range = float(env.lidar_range)
-    xs, ys, dx, dy = _lidar_points(obs, rays, lidar_range)
+    xs, ys, dx, dy, dyaw = _lidar_points(obs, rays, lidar_range)
 
     plt.ion()
     fig, (ax_cam, ax_lidar) = plt.subplots(1, 2, figsize=(10, 5))
@@ -53,6 +53,18 @@ def _run_live_rollout(env, model, steps: int, fps: float, seed: int | None) -> N
 
     lidar_scatter = ax_lidar.scatter(xs, ys, s=6, c="#1f77b4", alpha=0.8)
     goal_scatter = ax_lidar.scatter([dx], [dy], s=60, c="#d62728", marker="x")
+    arrow_len = min(0.8, lidar_range * 0.2)
+    goal_arrow = ax_lidar.quiver(
+        [dx],
+        [dy],
+        [math.cos(dyaw) * arrow_len],
+        [math.sin(dyaw) * arrow_len],
+        angles="xy",
+        scale_units="xy",
+        scale=1.0,
+        color="#d62728",
+        width=0.01,
+    )
     ax_lidar.scatter([0.0], [0.0], s=30, c="#111111")
     ax_lidar.set_xlim(-lidar_range, lidar_range)
     ax_lidar.set_ylim(-lidar_range, lidar_range)
@@ -69,9 +81,11 @@ def _run_live_rollout(env, model, steps: int, fps: float, seed: int | None) -> N
         frame = env.render()
         if frame is not None:
             cam_im.set_data(frame)
-        xs, ys, dx, dy = _lidar_points(obs, rays, lidar_range)
+        xs, ys, dx, dy, dyaw = _lidar_points(obs, rays, lidar_range)
         lidar_scatter.set_offsets(np.c_[xs, ys])
         goal_scatter.set_offsets(np.array([[dx, dy]], dtype=np.float32))
+        goal_arrow.set_offsets(np.array([[dx, dy]], dtype=np.float32))
+        goal_arrow.set_UVC([math.cos(dyaw) * arrow_len], [math.sin(dyaw) * arrow_len])
         fig.canvas.draw_idle()
         plt.pause(0.001)
         if dt > 0:
@@ -147,7 +161,7 @@ def run_training_chunks(
         vec_env = "subproc" if num_envs >= 4 else "dummy"
     env_fns = [_make_env(config_path=config_path, render_mode=None) for _ in range(num_envs)]
     if vec_env == "subproc" and num_envs > 1:
-        train_env = SubprocVecEnv(env_fns)
+        train_env = SubprocVecEnv(env_fns, start_method="spawn")
     else:
         train_env = DummyVecEnv(env_fns)
     train_env = VecMonitor(train_env)

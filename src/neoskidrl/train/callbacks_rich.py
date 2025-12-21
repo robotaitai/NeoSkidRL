@@ -25,6 +25,12 @@ class _EpisodeAccumulator:
     sum_action_delta: float = 0.0
     sum_action_sat: float = 0.0
     action_count: int = 0
+    pos_ok_count: int = 0
+    yaw_ok_count: int = 0
+    stop_ok_count: int = 0
+    pos_yaw_count: int = 0
+    pos_stop_count: int = 0
+    yaw_stop_count: int = 0
     success: bool = False
     collision: bool = False
     stuck: bool = False
@@ -45,7 +51,7 @@ class SB3RichCallback(BaseCallback):
         verbose: int = 0,
     ):
         super().__init__(verbose=verbose)
-        self.logger = logger
+        self.run_logger = logger
         self.total_steps = total_steps
         self.chunk_steps = chunk_steps
         self.eval_every_steps = eval_every_steps
@@ -86,7 +92,7 @@ class SB3RichCallback(BaseCallback):
         if self.chunk_steps > 0:
             chunk_end = ((self.num_timesteps // self.chunk_steps) + 1) * self.chunk_steps
 
-        self.logger.on_step(
+        self.run_logger.on_step(
             {
                 "timesteps": int(self.num_timesteps),
                 "fps": float(fps),
@@ -135,6 +141,21 @@ class SB3RichCallback(BaseCallback):
                 acc.sum_abs_v += abs(float(info["speed_v"]))
             if "speed_wz" in info:
                 acc.sum_abs_wz += abs(float(info["speed_wz"]))
+            pos_ok = bool(info.get("pos_ok", False))
+            yaw_ok = bool(info.get("yaw_ok", False))
+            stop_ok = bool(info.get("stop_ok", False))
+            if pos_ok:
+                acc.pos_ok_count += 1
+            if yaw_ok:
+                acc.yaw_ok_count += 1
+            if stop_ok:
+                acc.stop_ok_count += 1
+            if pos_ok and yaw_ok:
+                acc.pos_yaw_count += 1
+            if pos_ok and stop_ok:
+                acc.pos_stop_count += 1
+            if yaw_ok and stop_ok:
+                acc.yaw_stop_count += 1
 
             if actions is not None and env_idx < actions.shape[0]:
                 action = actions[env_idx]
@@ -172,24 +193,32 @@ class SB3RichCallback(BaseCallback):
                     "mean_abs_wz": acc.sum_abs_wz / ep_len,
                     "action_delta_mean": acc.sum_action_delta / max(1, acc.action_count),
                     "action_saturation_pct": (acc.sum_action_sat / max(1, acc.action_count)) * 100.0,
+                    "pos_ok_rate": acc.pos_ok_count / ep_len,
+                    "yaw_ok_rate": acc.yaw_ok_count / ep_len,
+                    "stop_ok_rate": acc.stop_ok_count / ep_len,
+                    "pos_and_yaw_rate": acc.pos_yaw_count / ep_len,
+                    "pos_and_stop_rate": acc.pos_stop_count / ep_len,
+                    "yaw_and_stop_rate": acc.yaw_stop_count / ep_len,
                     "reward_terms_sum": acc.sum_reward_terms or {},
                     "reward_contrib_sum": acc.sum_reward_contrib or {},
                     "reward_contrib_abs_sum": acc.sum_reward_contrib_abs or {},
                 }
-                self.logger.on_episode_end(ep_summary)
+                self.run_logger.on_episode_end(ep_summary)
                 self._accumulators[env_idx] = _EpisodeAccumulator()
                 self._prev_actions[env_idx] = None
 
         if self.eval_enabled and self.eval_every_steps > 0 and self.num_timesteps >= self._next_eval:
             eval_summary = self._run_eval()
             if eval_summary:
-                self.logger.on_eval(eval_summary)
+                self.run_logger.on_eval(eval_summary)
             self._next_eval += self.eval_every_steps
 
         return True
 
     def _extract_algo_metrics(self) -> dict:
         metrics: dict = {}
+        ent_coef_mode = None
+        ent_coef_value = None
         logger = getattr(self.model, "logger", None)
         name_to_value = getattr(logger, "name_to_value", None) if logger else None
         if isinstance(name_to_value, dict):
@@ -198,10 +227,30 @@ class SB3RichCallback(BaseCallback):
             if "train/critic_loss" in name_to_value:
                 metrics["critic_loss"] = float(name_to_value["train/critic_loss"])
             if "train/ent_coef" in name_to_value:
-                metrics["ent_coef"] = float(name_to_value["train/ent_coef"])
-        if not metrics and hasattr(self.model, "ent_coef"):
+                ent_coef_value = float(name_to_value["train/ent_coef"])
+        log_ent_coef = getattr(self.model, "log_ent_coef", None)
+        if log_ent_coef is not None:
+            ent_coef_mode = "auto"
             try:
-                metrics["ent_coef"] = float(self.model.ent_coef)
+                ent_coef_value = float(np.exp(log_ent_coef).item())
+            except Exception:
+                pass
+        else:
+            ent_coef_mode = "fixed"
+            if ent_coef_value is None and hasattr(self.model, "ent_coef"):
+                try:
+                    ent_coef_value = float(self.model.ent_coef)
+                except Exception:
+                    pass
+
+        if ent_coef_mode is not None:
+            metrics["ent_coef_mode"] = ent_coef_mode
+        if ent_coef_value is not None:
+            metrics["ent_coef_value"] = ent_coef_value
+        target_entropy = getattr(self.model, "target_entropy", None)
+        if target_entropy is not None:
+            try:
+                metrics["target_entropy"] = float(target_entropy)
             except Exception:
                 pass
         return metrics

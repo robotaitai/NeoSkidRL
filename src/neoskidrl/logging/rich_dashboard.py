@@ -109,6 +109,12 @@ class RichDashboardLogger(RLRunLogger):
             "mean_abs_v": window.mean("mean_abs_v"),
             "mean_abs_wz": window.mean("mean_abs_wz"),
             "action_saturation_pct": window.mean("action_saturation_pct"),
+            "pos_ok_rate": window.mean("pos_ok_rate"),
+            "yaw_ok_rate": window.mean("yaw_ok_rate"),
+            "stop_ok_rate": window.mean("stop_ok_rate"),
+            "pos_and_yaw_rate": window.mean("pos_and_yaw_rate"),
+            "pos_and_stop_rate": window.mean("pos_and_stop_rate"),
+            "yaw_and_stop_rate": window.mean("yaw_and_stop_rate"),
             "timeout_rate": window.rate("timeout"),
             "stuck_rate": window.rate("stuck"),
             "collision_rate": window.rate("collision"),
@@ -207,6 +213,12 @@ class RichDashboardLogger(RLRunLogger):
         table.add_column("W20")
         table.add_column("W100")
         table.add_row("success_rate", _fmt_pct(stats_20.get("success_rate")), _fmt_pct(stats_100.get("success_rate")))
+        table.add_row("pos_ok_rate", _fmt_pct(stats_20.get("pos_ok_rate")), _fmt_pct(stats_100.get("pos_ok_rate")))
+        table.add_row("yaw_ok_rate", _fmt_pct(stats_20.get("yaw_ok_rate")), _fmt_pct(stats_100.get("yaw_ok_rate")))
+        table.add_row("stop_ok_rate", _fmt_pct(stats_20.get("stop_ok_rate")), _fmt_pct(stats_100.get("stop_ok_rate")))
+        table.add_row("pos&yaw_rate", _fmt_pct(stats_20.get("pos_and_yaw_rate")), _fmt_pct(stats_100.get("pos_and_yaw_rate")))
+        table.add_row("pos&stop_rate", _fmt_pct(stats_20.get("pos_and_stop_rate")), _fmt_pct(stats_100.get("pos_and_stop_rate")))
+        table.add_row("yaw&stop_rate", _fmt_pct(stats_20.get("yaw_and_stop_rate")), _fmt_pct(stats_100.get("yaw_and_stop_rate")))
         table.add_row("final_dist_mean", _fmt(stats_20.get("final_dist_mean"), 2), _fmt(stats_100.get("final_dist_mean"), 2))
         table.add_row("min_dist_mean", _fmt(stats_20.get("min_dist_mean"), 2), _fmt(stats_100.get("min_dist_mean"), 2))
         table.add_row("mean|v|", _fmt(stats_20.get("mean_abs_v"), 3), _fmt(stats_100.get("mean_abs_v"), 3))
@@ -290,7 +302,9 @@ class RichDashboardLogger(RLRunLogger):
 
         algo = step.get("algo_metrics") or {}
         if algo:
-            table.add_row("ent_coef", _fmt(algo.get("ent_coef"), 4))
+            table.add_row("ent_mode", algo.get("ent_coef_mode", "n/a"))
+            table.add_row("alpha", _fmt(algo.get("ent_coef_value"), 4))
+            table.add_row("target_entropy", _fmt(algo.get("target_entropy"), 3))
             table.add_row("actor_loss", _fmt(algo.get("actor_loss"), 4))
             table.add_row("critic_loss", _fmt(algo.get("critic_loss"), 4))
 

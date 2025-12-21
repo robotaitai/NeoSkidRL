@@ -78,12 +78,13 @@ task:
 
 # RECOMMENDED WEIGHTS for "get it to learn" phase
 reward:
-  enabled_terms: ["progress", "heading", "velocity", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
+  enabled_terms: ["progress", "heading", "velocity", "near_goal_speed", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
   weights:
     # Dense signal: Make progress the main driver
     progress: 15.0                # Even stronger positive for moving toward goal
     heading: 2.0                  # Small shaping for turning toward the goal
-    velocity: 5.0                # Encourage moving even before perfect alignment
+    velocity: 0.4                # Encourage moving toward the goal when far
+    near_goal_speed: -1.0        # Discourage coasting near the goal
     
     # Sparse rewards/penalties
     goal_bonus: 100.0             # VERY BIG sparse reward for success
@@ -94,6 +95,8 @@ reward:
     clearance: 0.0                # DISABLED - was causing robot to freeze
     smooth: 0.0                   # DISABLED - not needed for learning
     time: -0.005                  # Very tiny time penalty
+
+  velocity_dslow_m: 1.0
 
 # Notes:
 # - Progress is 15 (main learning signal - VERY STRONG)

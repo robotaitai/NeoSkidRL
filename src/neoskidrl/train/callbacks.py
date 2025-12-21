@@ -129,6 +129,12 @@ class EpisodeJSONLLogger(BaseCallback):
         self._ep_last_dist = None
         self._ep_sum_abs_v = None
         self._ep_sum_abs_wz = None
+        self._ep_pos_ok = None
+        self._ep_yaw_ok = None
+        self._ep_stop_ok = None
+        self._ep_pos_yaw = None
+        self._ep_pos_stop = None
+        self._ep_yaw_stop = None
         
     def _on_training_start(self) -> None:
         """Initialize tracking arrays for each parallel environment."""
@@ -145,6 +151,12 @@ class EpisodeJSONLLogger(BaseCallback):
         self._ep_last_dist = [None] * n_envs
         self._ep_sum_abs_v = [0.0] * n_envs
         self._ep_sum_abs_wz = [0.0] * n_envs
+        self._ep_pos_ok = [0] * n_envs
+        self._ep_yaw_ok = [0] * n_envs
+        self._ep_stop_ok = [0] * n_envs
+        self._ep_pos_yaw = [0] * n_envs
+        self._ep_pos_stop = [0] * n_envs
+        self._ep_yaw_stop = [0] * n_envs
         
         # Ensure output directory exists
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,6 +206,21 @@ class EpisodeJSONLLogger(BaseCallback):
                     self._ep_sum_abs_v[env_idx] += abs(float(info["speed_v"]))
                 if "speed_wz" in info:
                     self._ep_sum_abs_wz[env_idx] += abs(float(info["speed_wz"]))
+                pos_ok = bool(info.get("pos_ok", False))
+                yaw_ok = bool(info.get("yaw_ok", False))
+                stop_ok = bool(info.get("stop_ok", False))
+                if pos_ok:
+                    self._ep_pos_ok[env_idx] += 1
+                if yaw_ok:
+                    self._ep_yaw_ok[env_idx] += 1
+                if stop_ok:
+                    self._ep_stop_ok[env_idx] += 1
+                if pos_ok and yaw_ok:
+                    self._ep_pos_yaw[env_idx] += 1
+                if pos_ok and stop_ok:
+                    self._ep_pos_stop[env_idx] += 1
+                if yaw_ok and stop_ok:
+                    self._ep_yaw_stop[env_idx] += 1
                 
                 # Write episode data when done
                 if done:
@@ -207,6 +234,12 @@ class EpisodeJSONLLogger(BaseCallback):
                         final_dist=self._ep_last_dist[env_idx],
                         mean_abs_v=(self._ep_sum_abs_v[env_idx] / max(1, self._ep_lengths[env_idx])),
                         mean_abs_wz=(self._ep_sum_abs_wz[env_idx] / max(1, self._ep_lengths[env_idx])),
+                        pos_ok_rate=(self._ep_pos_ok[env_idx] / max(1, self._ep_lengths[env_idx])),
+                        yaw_ok_rate=(self._ep_yaw_ok[env_idx] / max(1, self._ep_lengths[env_idx])),
+                        stop_ok_rate=(self._ep_stop_ok[env_idx] / max(1, self._ep_lengths[env_idx])),
+                        pos_and_yaw_rate=(self._ep_pos_yaw[env_idx] / max(1, self._ep_lengths[env_idx])),
+                        pos_and_stop_rate=(self._ep_pos_stop[env_idx] / max(1, self._ep_lengths[env_idx])),
+                        yaw_and_stop_rate=(self._ep_yaw_stop[env_idx] / max(1, self._ep_lengths[env_idx])),
                         reward_terms_sum=self._ep_reward_terms[env_idx] or {},
                         reward_contrib_sum=self._ep_reward_contrib[env_idx] or {},
                         reward_contrib_abs_sum=self._ep_reward_contrib_abs[env_idx] or {},
@@ -225,6 +258,12 @@ class EpisodeJSONLLogger(BaseCallback):
                     self._ep_last_dist[env_idx] = None
                     self._ep_sum_abs_v[env_idx] = 0.0
                     self._ep_sum_abs_wz[env_idx] = 0.0
+                    self._ep_pos_ok[env_idx] = 0
+                    self._ep_yaw_ok[env_idx] = 0
+                    self._ep_stop_ok[env_idx] = 0
+                    self._ep_pos_yaw[env_idx] = 0
+                    self._ep_pos_stop[env_idx] = 0
+                    self._ep_yaw_stop[env_idx] = 0
         
         return True
     
@@ -239,6 +278,12 @@ class EpisodeJSONLLogger(BaseCallback):
         final_dist: float | None,
         mean_abs_v: float,
         mean_abs_wz: float,
+        pos_ok_rate: float,
+        yaw_ok_rate: float,
+        stop_ok_rate: float,
+        pos_and_yaw_rate: float,
+        pos_and_stop_rate: float,
+        yaw_and_stop_rate: float,
         reward_terms_sum: dict,
         reward_contrib_sum: dict,
         reward_contrib_abs_sum: dict,
@@ -261,6 +306,12 @@ class EpisodeJSONLLogger(BaseCallback):
             "final_dist": float(final_dist) if final_dist is not None else None,
             "mean_abs_v": float(mean_abs_v),
             "mean_abs_wz": float(mean_abs_wz),
+            "pos_ok_rate": float(pos_ok_rate),
+            "yaw_ok_rate": float(yaw_ok_rate),
+            "stop_ok_rate": float(stop_ok_rate),
+            "pos_and_yaw_rate": float(pos_and_yaw_rate),
+            "pos_and_stop_rate": float(pos_and_stop_rate),
+            "yaw_and_stop_rate": float(yaw_and_stop_rate),
             "sum_progress": sum_progress,
             "sum_time": sum_time,
             "reward_terms_sum": {k: float(v) for k, v in reward_terms_sum.items()},

@@ -13,7 +13,7 @@ def test_reward_terms_keys_and_values():
         success=True,
     )
 
-    expected_keys = {"progress", "time", "smooth", "heading", "velocity", "collision", "goal_bonus"}
+    expected_keys = {"progress", "time", "smooth", "heading", "velocity", "near_goal_speed", "collision", "goal_bonus"}
     assert expected_keys.issubset(set(terms.keys()))
     assert all(np.isfinite(list(terms.values())))
 
@@ -34,10 +34,13 @@ def test_reward_terms_keys_and_values():
         action=action,
         collided=False,
         success=False,
-        speed_v=1.2,
-        dt_step=0.1,
+        goal_angle=0.0,
+        vx_body=1.0,
+        vy_body=0.0,
+        v_max=2.0,
+        d_slow=2.0,
     )
-    assert np.isclose(velocity_terms["velocity"], 0.12)
+    assert np.isclose(velocity_terms["velocity"], 0.25)
 
     cfg = {
         "reward": {
