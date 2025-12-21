@@ -84,9 +84,13 @@ def test_episode_logger_writes_jsonl():
         assert "collision" in record
         assert "stuck" in record
         assert "reward_terms_sum" in record
+        assert "reward_contrib_sum" in record
+        assert "reward_contrib_abs_sum" in record
         
         # Check reward_terms_sum is a dict
         assert isinstance(record["reward_terms_sum"], dict)
+        assert isinstance(record["reward_contrib_sum"], dict)
+        assert isinstance(record["reward_contrib_abs_sum"], dict)
 
 
 def test_episode_logger_multiple_episodes():
@@ -151,4 +155,3 @@ def test_episode_logger_multiple_episodes():
         for i, line in enumerate(lines):
             record = json.loads(line)
             assert record["episode_idx"] == i
-

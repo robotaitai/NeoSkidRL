@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Tuple
 
 import numpy as np
 
@@ -92,8 +92,7 @@ def _weights_from_legacy(cfg: dict) -> Dict[str, float]:
         "clearance": float(cfg.get("w_clearance", 0.0)),
     }
 
-
-def aggregate_reward(terms: Dict[str, float], cfg: dict) -> float:
+def _resolve_reward_weights(cfg: dict) -> Tuple[Dict[str, float], list[str]]:
     reward_cfg = cfg.get("reward", {})
     weights = reward_cfg.get("weights")
     enabled_terms = reward_cfg.get("enabled_terms")
@@ -104,6 +103,21 @@ def aggregate_reward(terms: Dict[str, float], cfg: dict) -> float:
 
     if enabled_terms is None:
         enabled_terms = list(weights.keys())
+    return weights, enabled_terms
+
+
+def compute_reward_contributions(terms: Dict[str, float], cfg: dict) -> Dict[str, float]:
+    weights, enabled_terms = _resolve_reward_weights(cfg)
+    enabled = set(enabled_terms)
+    contributions = {}
+    for name, value in terms.items():
+        weight = float(weights.get(name, 0.0)) if name in enabled else 0.0
+        contributions[name] = float(weight) * float(value)
+    return contributions
+
+
+def aggregate_reward(terms: Dict[str, float], cfg: dict) -> float:
+    weights, enabled_terms = _resolve_reward_weights(cfg)
 
     total = 0.0
     for name in enabled_terms:

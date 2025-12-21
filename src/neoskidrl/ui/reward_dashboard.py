@@ -65,6 +65,16 @@ def expand_reward_terms(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def expand_reward_contrib(df: pd.DataFrame, column: str, prefix: str) -> pd.DataFrame:
+    """Expand reward contribution dict column into separate columns."""
+    if df.empty or column not in df.columns:
+        return df
+    contrib_df = pd.json_normalize(df[column])
+    contrib_df.columns = [f"{prefix}{col}" for col in contrib_df.columns]
+    result = pd.concat([df.reset_index(drop=True), contrib_df], axis=1)
+    return result
+
+
 def load_config_yaml(path: Path) -> Dict[str, Any]:
     """Load config YAML file."""
     if not path.exists():
@@ -347,23 +357,36 @@ def render_return_chart(df: pd.DataFrame) -> None:
 
 def compute_reward_percentages(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
     """Compute average percentage contribution of each reward term."""
-    if df.empty or "reward_terms_sum" not in df.columns:
+    if df.empty:
         return pd.DataFrame()
-    
-    df_expanded = expand_reward_terms(df)
-    term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
-    
-    if not term_cols:
-        return pd.DataFrame()
-    
-    # Compute weighted contributions for all episodes
-    contributions = {}
-    for term_col in term_cols:
-        term_name = term_col.replace("term_", "")
-        weight = weights.get(term_name, 0.0)
-        # Sum across all episodes, then take absolute value for percentage calc
-        total_contribution = (df_expanded[term_col] * weight).sum()
-        contributions[term_name] = total_contribution
+
+    if "reward_contrib_abs_sum" in df.columns:
+        df_expanded = expand_reward_contrib(df, "reward_contrib_abs_sum", "abs_")
+        term_cols = [col for col in df_expanded.columns if col.startswith("abs_")]
+        if not term_cols:
+            return pd.DataFrame()
+        contributions = {}
+        for term_col in term_cols:
+            term_name = term_col.replace("abs_", "")
+            contributions[term_name] = float(df_expanded[term_col].sum())
+    else:
+        if "reward_terms_sum" not in df.columns:
+            return pd.DataFrame()
+
+        df_expanded = expand_reward_terms(df)
+        term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
+
+        if not term_cols:
+            return pd.DataFrame()
+
+        # Compute weighted contributions for all episodes
+        contributions = {}
+        for term_col in term_cols:
+            term_name = term_col.replace("term_", "")
+            weight = weights.get(term_name, 0.0)
+            # Sum across all episodes, then take absolute value for percentage calc
+            total_contribution = (df_expanded[term_col] * weight).sum()
+            contributions[term_name] = total_contribution
     
     # Convert to dataframe
     contrib_df = pd.DataFrame([
@@ -417,18 +440,22 @@ def render_reward_percentages_pie(df: pd.DataFrame, weights: Dict[str, float]) -
 
 def render_reward_terms_chart(df: pd.DataFrame, weights: Dict[str, float]) -> None:
     """Render stacked area chart of reward term contributions."""
-    if df.empty or "reward_terms_sum" not in df.columns:
+    if df.empty or ("reward_terms_sum" not in df.columns and "reward_contrib_sum" not in df.columns):
         st.info("No reward terms data available yet.")
         return
     
     st.subheader("🎨 Reward Term Contributions Over Time")
     st.caption("Shows how each reward term (weighted) contributes to total return over episodes. Adjust weights to balance behavior.")
     
-    # Expand reward terms
-    df_expanded = expand_reward_terms(df)
-    
-    # Get term columns
-    term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
+    if "reward_contrib_sum" in df.columns:
+        df_expanded = expand_reward_contrib(df, "reward_contrib_sum", "contrib_")
+        term_cols = [col for col in df_expanded.columns if col.startswith("contrib_")]
+        weight_lookup = None
+    else:
+        # Expand reward terms
+        df_expanded = expand_reward_terms(df)
+        term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
+        weight_lookup = weights
     
     if not term_cols:
         st.info("No reward terms found in episode data.")
@@ -439,10 +466,14 @@ def render_reward_terms_chart(df: pd.DataFrame, weights: Dict[str, float]) -> No
     for idx, row in df_expanded.iterrows():
         episode_idx = row.get("episode_idx", idx)
         for term_col in term_cols:
-            term_name = term_col.replace("term_", "")
-            term_sum = row.get(term_col, 0.0)
-            weight = weights.get(term_name, 0.0)
-            contribution = term_sum * weight
+            if weight_lookup is None:
+                term_name = term_col.replace("contrib_", "")
+                contribution = row.get(term_col, 0.0)
+            else:
+                term_name = term_col.replace("term_", "")
+                term_sum = row.get(term_col, 0.0)
+                weight = weight_lookup.get(term_name, 0.0)
+                contribution = term_sum * weight
             
             chart_data.append({
                 "episode_idx": episode_idx,

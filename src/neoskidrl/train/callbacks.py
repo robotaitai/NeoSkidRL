@@ -120,6 +120,8 @@ class EpisodeJSONLLogger(BaseCallback):
         self._ep_returns = None
         self._ep_lengths = None
         self._ep_reward_terms = None
+        self._ep_reward_contrib = None
+        self._ep_reward_contrib_abs = None
         self._ep_success = None
         self._ep_collision = None
         self._ep_stuck = None
@@ -134,6 +136,8 @@ class EpisodeJSONLLogger(BaseCallback):
         self._ep_returns = [0.0] * n_envs
         self._ep_lengths = [0] * n_envs
         self._ep_reward_terms = [None] * n_envs
+        self._ep_reward_contrib = [None] * n_envs
+        self._ep_reward_contrib_abs = [None] * n_envs
         self._ep_success = [False] * n_envs
         self._ep_collision = [False] * n_envs
         self._ep_stuck = [False] * n_envs
@@ -165,6 +169,15 @@ class EpisodeJSONLLogger(BaseCallback):
                         self._ep_reward_terms[env_idx] = {k: 0.0 for k in info["reward_terms"].keys()}
                     for key, val in info["reward_terms"].items():
                         self._ep_reward_terms[env_idx][key] += float(val)
+                if "reward_contrib" in info:
+                    if self._ep_reward_contrib[env_idx] is None:
+                        self._ep_reward_contrib[env_idx] = {k: 0.0 for k in info["reward_contrib"].keys()}
+                    if self._ep_reward_contrib_abs[env_idx] is None:
+                        self._ep_reward_contrib_abs[env_idx] = {k: 0.0 for k in info["reward_contrib"].keys()}
+                    for key, val in info["reward_contrib"].items():
+                        value = float(val)
+                        self._ep_reward_contrib[env_idx][key] += value
+                        self._ep_reward_contrib_abs[env_idx][key] += abs(value)
                 
                 # Track episode outcomes
                 if "success" in info:
@@ -195,12 +208,16 @@ class EpisodeJSONLLogger(BaseCallback):
                         mean_abs_v=(self._ep_sum_abs_v[env_idx] / max(1, self._ep_lengths[env_idx])),
                         mean_abs_wz=(self._ep_sum_abs_wz[env_idx] / max(1, self._ep_lengths[env_idx])),
                         reward_terms_sum=self._ep_reward_terms[env_idx] or {},
+                        reward_contrib_sum=self._ep_reward_contrib[env_idx] or {},
+                        reward_contrib_abs_sum=self._ep_reward_contrib_abs[env_idx] or {},
                     )
                     
                     # Reset tracking for this environment
                     self._ep_returns[env_idx] = 0.0
                     self._ep_lengths[env_idx] = 0
                     self._ep_reward_terms[env_idx] = None
+                    self._ep_reward_contrib[env_idx] = None
+                    self._ep_reward_contrib_abs[env_idx] = None
                     self._ep_success[env_idx] = False
                     self._ep_collision[env_idx] = False
                     self._ep_stuck[env_idx] = False
@@ -223,6 +240,8 @@ class EpisodeJSONLLogger(BaseCallback):
         mean_abs_v: float,
         mean_abs_wz: float,
         reward_terms_sum: dict,
+        reward_contrib_sum: dict,
+        reward_contrib_abs_sum: dict,
     ) -> None:
         """Write a single episode record to the JSONL file."""
         sum_progress = float(reward_terms_sum.get("progress", 0.0))
@@ -245,6 +264,8 @@ class EpisodeJSONLLogger(BaseCallback):
             "sum_progress": sum_progress,
             "sum_time": sum_time,
             "reward_terms_sum": {k: float(v) for k, v in reward_terms_sum.items()},
+            "reward_contrib_sum": {k: float(v) for k, v in reward_contrib_sum.items()},
+            "reward_contrib_abs_sum": {k: float(v) for k, v in reward_contrib_abs_sum.items()},
             "timesteps": self.num_timesteps,
         }
         

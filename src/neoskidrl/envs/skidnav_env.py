@@ -11,7 +11,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from neoskidrl.config import load_config
-from neoskidrl.rewards import aggregate_reward, compute_reward_terms
+from neoskidrl.rewards import aggregate_reward, compute_reward_contributions, compute_reward_terms
 import importlib.resources as ir
 
 try:
@@ -482,6 +482,7 @@ class NeoSkidNavEnv(gym.Env):
             goal_angle=goal_angle,
             prev_goal_angle=self._prev_goal_angle,
         )
+        reward_contrib = compute_reward_contributions(terms, self.cfg)
         r = aggregate_reward(terms, self.cfg)
 
         terminated = False
@@ -509,6 +510,7 @@ class NeoSkidNavEnv(gym.Env):
             "timeout": truncated,
             "steps": self.steps,
             "reward_terms": terms,
+            "reward_contrib": reward_contrib,
             "reward_total": float(r),
             "base_xy": base_xy.copy(),
             "base_yaw": yaw,

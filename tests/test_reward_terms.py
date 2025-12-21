@@ -1,6 +1,6 @@
 import numpy as np
 
-from neoskidrl.rewards.skidnav_reward import aggregate_reward, compute_reward_terms
+from neoskidrl.rewards.skidnav_reward import aggregate_reward, compute_reward_contributions, compute_reward_terms
 
 
 def test_reward_terms_keys_and_values():
@@ -43,3 +43,7 @@ def test_reward_terms_keys_and_values():
     total = aggregate_reward(terms, cfg)
     expected = 0.5 - 0.1 - 0.01 * np.linalg.norm(action) + 10.0
     assert np.isclose(total, expected)
+
+    contrib = compute_reward_contributions(terms, cfg)
+    assert np.isclose(contrib["progress"], 0.5)
+    assert np.isclose(contrib["time"], -0.1)
