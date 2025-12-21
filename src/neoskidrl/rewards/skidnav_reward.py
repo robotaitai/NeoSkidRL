@@ -16,6 +16,8 @@ def compute_reward_terms(
     prev_action: np.ndarray | None = None,
     goal_angle: float | None = None,
     prev_goal_angle: float | None = None,
+    speed_v: float | None = None,
+    dt_step: float | None = None,
 ) -> Dict[str, float]:
     """
     Compute reward terms for skid-steer navigation.
@@ -31,6 +33,8 @@ def compute_reward_terms(
         prev_action: Previous applied action (for smoothness)
         goal_angle: Current goal angle in robot frame (radians)
         prev_goal_angle: Previous goal angle in robot frame (radians)
+        speed_v: Current linear speed magnitude (m/s)
+        dt_step: Step duration in seconds
     """
     if prev_dist is None:
         prev_dist = dist
@@ -47,10 +51,18 @@ def compute_reward_terms(
     else:
         smooth = float(np.linalg.norm(action))
 
+
+    
+
     # Heading: reward turning toward the goal (positive when angle error shrinks)
     heading = 0.0
     if goal_angle is not None and prev_goal_angle is not None:
         heading = float(abs(prev_goal_angle) - abs(goal_angle))
+
+    # Velocity: meters progressed regardless of direction
+    velocity = 0.0
+    if speed_v is not None and dt_step is not None:
+        velocity = float(speed_v) * float(dt_step)
     
     # Collision: binary indicator
     collision = 1.0 if collided else 0.0
@@ -73,6 +85,7 @@ def compute_reward_terms(
         "time": time,
         "smooth": smooth,
         "heading": heading,
+        "velocity": velocity,
         "collision": collision,
         "goal_bonus": goal_bonus,
         "stuck": stuck_penalty,
@@ -86,6 +99,7 @@ def _weights_from_legacy(cfg: dict) -> Dict[str, float]:
         "time": float(cfg.get("w_time", 0.0)),
         "smooth": float(cfg.get("w_smooth", 0.0)),
         "heading": float(cfg.get("w_heading", 0.0)),
+        "velocity": float(cfg.get("w_velocity", 0.0)),
         "collision": float(cfg.get("w_collision", 0.0)),
         "goal_bonus": float(cfg.get("w_goal_bonus", 0.0)),
         "stuck": float(cfg.get("w_stuck", 0.0)),

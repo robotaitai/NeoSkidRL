@@ -14,6 +14,7 @@ Added new reward terms:
 - **Stuck penalty**: Penalizes robot for getting stuck
 - **Clearance reward**: Encourages maintaining safe distance from obstacles based on minimum lidar reading
 - **Heading reward**: Rewards turning toward the goal before moving forward
+- **Velocity reward**: Rewards distance moved each step (regardless of direction)
 
 Improved existing terms:
 - **Smoothness**: Now penalizes action *changes* (Δaction) instead of action magnitude for better control
@@ -113,6 +114,7 @@ reward:
   weights:
     progress: 10.0      # Increase from 1.0
     heading: 2.0        # NEW - turn toward goal
+    velocity: 5.0       # NEW - reward moving distance per step
     goal_bonus: 75.0    # Increase from 20.0
     collision: -75.0    # Increase from -10.0
     stuck: -25.0        # Add new term

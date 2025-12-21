@@ -468,6 +468,7 @@ class NeoSkidNavEnv(gym.Env):
         
         goal_obs = self._goal_obs()
         goal_angle = float(math.atan2(goal_obs[1], goal_obs[0]))
+        dt_step = float(self.dt * self.frame_skip)
 
         # Compute rewards with enhanced terms
         terms = compute_reward_terms(
@@ -481,6 +482,8 @@ class NeoSkidNavEnv(gym.Env):
             prev_action=self._prev_applied_action,
             goal_angle=goal_angle,
             prev_goal_angle=self._prev_goal_angle,
+            speed_v=float(spd_obs[0]),
+            dt_step=dt_step,
         )
         reward_contrib = compute_reward_contributions(terms, self.cfg)
         r = aggregate_reward(terms, self.cfg)

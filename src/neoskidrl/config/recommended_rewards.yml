@@ -60,7 +60,7 @@ world:
     height_m: 0.01
   obstacles:
     max_count: 60
-    count_range: [20, 40]
+    count_range: [5, 20] # reduced from 20-40 to 5-20 for easier learning
     size_xy_range_m: [0.30, 1.20]
     height_m: 0.40
     cylinder_prob: 0.40
@@ -72,17 +72,18 @@ task:
     yaw_tol_deg: 30.0             # Relaxed from 10.0 (too strict!)
     stop_speed_mps: 0.15          # Slightly relaxed
   failure:
-    collision: true
+    collision: false # disabled collision penalty for easier learning
     stuck_sec: 1.5
     min_progress_m: 0.05
 
 # RECOMMENDED WEIGHTS for "get it to learn" phase
 reward:
-  enabled_terms: ["progress", "heading", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
+  enabled_terms: ["progress", "heading", "velocity", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
   weights:
     # Dense signal: Make progress the main driver
     progress: 15.0                # Even stronger positive for moving toward goal
     heading: 2.0                  # Small shaping for turning toward the goal
+    velocity: 5.0                # Encourage moving even before perfect alignment
     
     # Sparse rewards/penalties
     goal_bonus: 100.0             # VERY BIG sparse reward for success

@@ -78,11 +78,12 @@ task:
 
 # RECOMMENDED WEIGHTS for "get it to learn" phase
 reward:
-  enabled_terms: ["progress", "heading", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
+  enabled_terms: ["progress", "heading", "velocity", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
   weights:
     # Dense signal: Make progress the main driver
     progress: 15.0                # Even stronger positive for moving toward goal
     heading: 2.0                  # Small shaping for turning toward the goal
+    velocity: 5.0                # Encourage moving even before perfect alignment
     
     # Sparse rewards/penalties
     goal_bonus: 100.0             # VERY BIG sparse reward for success
