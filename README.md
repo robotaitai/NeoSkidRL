@@ -88,6 +88,7 @@ Config overview:
 - `config/eval.yml`: eval scenarios + fixed seeds
 - `config/default.yml`: legacy defaults
 - Reward terms are computed in code and aggregated via `reward.enabled_terms` + `reward.weights`.
+When running from this repo, edit configs under `config/` (CLI paths point there).
 
 Reproducibility: `train` saves the exact config + args under `runs/train/<run_name>/`.
 

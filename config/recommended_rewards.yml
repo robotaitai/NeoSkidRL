@@ -5,7 +5,7 @@ env:
   seed: 0
   dt: 0.02
   episode_sec: 10.0
-  frame_skip: 1
+  frame_skip: 4
 
 robot:
   length_m: 0.307
@@ -30,12 +30,12 @@ control:
   action_space: "v_w"
   rate_limit:
     enabled: true
-    max_delta_per_step: 0.20
+    max_delta_per_step: 1.0 # increased from 0.20 to 1.0 for bcs of the frame skip
 
 sensors:
   lidar:
     enabled: true
-    rays: 360
+    rays: 90
     range_m: 10.0
   cameras:
     render_camera: "track"
@@ -59,9 +59,9 @@ world:
     clearance_m: 0.60
     height_m: 0.01
   obstacles:
-    max_count: 60
-    count_range: [20, 40]
-    size_xy_range_m: [0.30, 1.20]
+    max_count: 25
+    count_range: [5, 15] # reduced from 20-40 to 5-20 for easier learning
+    size_xy_range_m: [0.10, 1.20]
     height_m: 0.40
     cylinder_prob: 0.40
     margin_m: 0.25
@@ -72,7 +72,7 @@ task:
     yaw_tol_deg: 30.0             # Relaxed from 10.0 (too strict!)
     stop_speed_mps: 0.15          # Slightly relaxed
   failure:
-    collision: true
+    collision: false # disabled collision penalty for easier learning
     stuck_sec: 1.5
     min_progress_m: 0.05
 
@@ -88,7 +88,7 @@ reward:
     
     # Sparse rewards/penalties
     goal_bonus: 100.0             # VERY BIG sparse reward for success
-    collision: -50.0              # Moderate collision penalty (not too scary)
+    collision: -5.0              # Moderate collision penalty (not too scary)
     stuck: -20.0                  # Penalty for getting stuck
     
     # Shaping rewards (DISABLED initially - enable after first successes)

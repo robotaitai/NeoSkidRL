@@ -45,4 +45,4 @@ pythonpath = ["src"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-neoskidrl = ["models/*.xml", "config/*.yml"]
+neoskidrl = ["models/*.xml"]
