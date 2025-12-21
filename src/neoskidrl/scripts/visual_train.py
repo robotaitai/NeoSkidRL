@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from neoskidrl.utils import generate_run_name
+import torch as th
 
 
 def _make_env(config_path: str, render_mode: str | None = None):
@@ -168,6 +169,11 @@ def run_training_chunks(
     train_env.seed(seed)
     train_env.reset()
 
+    policy_kwargs = dict(
+    net_arch=dict(pi=[512, 512], qf=[512, 512]),
+    activation_fn=th.nn.ReLU,   # optional
+)
+
     # Build SAC model with configurable entropy
     sac_kwargs = {
         "policy": "MlpPolicy",
@@ -181,6 +187,7 @@ def run_training_chunks(
         "train_freq": 1,
         "gradient_steps": 1,
         "device": device,
+        "policy_kwargs": policy_kwargs,
     }
     
     # Add entropy coefficient (auto or fixed value)
@@ -245,7 +252,7 @@ def run_training_chunks(
             model.learn(
                 total_timesteps=chunk,
                 reset_num_timesteps=(reset_timesteps and first_learn),
-                progress_bar=False,
+                progress_bar=True,
                 log_interval=10,
                 callback=callbacks,
             )

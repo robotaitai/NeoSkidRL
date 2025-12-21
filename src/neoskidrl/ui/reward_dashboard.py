@@ -9,12 +9,16 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, List, Any
+import glob
 
 import streamlit as st
 import pandas as pd
 import altair as alt
 import yaml
 from streamlit_autorefresh import st_autorefresh
+
+# Import reward functions to use proper calculations
+from neoskidrl.rewards import compute_reward_contributions, _resolve_reward_weights
 
 
 # ============================================================================
@@ -137,14 +141,60 @@ def set_reward_weights(config: Dict[str, Any], weights: Dict[str, float]) -> Dic
             "smooth": "w_smooth",
             "heading": "w_heading",
             "velocity": "w_velocity",
+            "near_goal_speed": "w_near_goal_speed",
             "collision": "w_collision",
             "goal_bonus": "w_goal_bonus",
+            "stuck": "w_stuck",
+            "clearance": "w_clearance",
         }
         for term_name, weight in weights.items():
             legacy_key = legacy_mapping.get(term_name, f"w_{term_name}")
             reward_cfg[legacy_key] = float(weight)
     
     return config
+
+
+def find_saved_runs() -> List[Path]:
+    """Find all saved run checkpoints and models."""
+    saved_runs = []
+    
+    # Search in checkpoints directory
+    checkpoint_base = Path("runs/checkpoints")
+    if checkpoint_base.exists():
+        checkpoint_dirs = checkpoint_base.glob("*")
+        for run_dir in checkpoint_dirs:
+            if run_dir.is_dir():
+                # Find all .zip files in this run
+                checkpoints = list(run_dir.glob("*.zip"))
+                saved_runs.extend(checkpoints)
+    
+    # Search in latest directory
+    latest_dir = Path("runs/latest")
+    if latest_dir.exists():
+        latest_models = latest_dir.glob("*.zip")
+        saved_runs.extend(latest_models)
+    
+    # Search in final directory  
+    final_dir = Path("runs/final")
+    if final_dir.exists():
+        final_models = final_dir.glob("*.zip")
+        saved_runs.extend(final_models)
+    
+    # Sort by modification time (newest first)
+    saved_runs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    
+    return saved_runs
+
+
+def extract_run_name_from_path(path: Path) -> str:
+    """Extract run name from checkpoint path."""
+    # Try to get from parent directory name
+    if path.parent.name in ["checkpoints", "latest", "final"]:
+        # Look at grandparent or filename
+        if path.parent.parent.name == "runs":
+            return path.stem.replace(".zip", "")
+        return path.parent.name
+    return path.parent.name
 
 
 def find_latest_video(video_dir: Path) -> Path | None:
@@ -231,43 +281,46 @@ def render_sidebar(config_files: List[Path]) -> tuple:
     # Reward term descriptions
     st.sidebar.markdown("""
     **Reward Terms Explained:**
-    - **Progress**: Distance moved toward goal (positive = encourage)
-    - **Heading**: Turn toward the goal direction (positive = encourage alignment)
-    - **Velocity**: Reward for moving distance regardless of direction
-    - **Time**: Penalty per timestep (negative = encourage speed)
-    - **Smooth**: Penalty for action changes (negative = encourage smoothness)
-    - **Collision**: Penalty when hitting obstacles (negative = discourage)
-    - **Goal Bonus**: Bonus when goal reached (positive = encourage success)
-    - **Stuck**: Penalty when robot gets stuck (negative = discourage)
-    - **Clearance**: Penalty for being too close to obstacles (negative = keep distance)
+    - **Progress**: Distance moved toward goal
+    - **Heading**: Turning toward goal direction
+    - **Velocity**: Speed toward goal when far
+    - **Near Goal Speed**: Speed near goal (negative = slow down)
+    - **Time**: Penalty per timestep
+    - **Smooth**: Action smoothness
+    - **Collision**: Penalty when hitting obstacles
+    - **Goal Bonus**: Success reward
+    - **Stuck**: Penalty when stuck
+    - **Clearance**: Penalty for being too close
     """)
     
     st.sidebar.markdown("---")
     
-    # Default weight ranges
+    # Default weight ranges - expanded for new terms
     weight_ranges = {
-        "progress": (0.0, 20.0, 10.0),
+        "progress": (0.0, 20.0, 15.0),
         "heading": (0.0, 5.0, 2.0),
-        "velocity": (0.0, 10.0, 5.0),
-        "time": (-1.0, 0.0, -0.01),
-        "smooth": (-1.0, 0.0, -0.05),
-        "collision": (-100.0, 0.0, -75.0),
-        "goal_bonus": (0.0, 100.0, 75.0),
-        "stuck": (-50.0, 0.0, -25.0),
-        "clearance": (-5.0, 0.0, -0.5),
+        "velocity": (0.0, 2.0, 0.4),
+        "near_goal_speed": (-5.0, 0.0, -1.0),
+        "time": (-1.0, 0.0, -0.005),
+        "smooth": (-1.0, 0.0, 0.0),
+        "collision": (-100.0, 0.0, -50.0),
+        "goal_bonus": (0.0, 150.0, 100.0),
+        "stuck": (-50.0, 0.0, -20.0),
+        "clearance": (-5.0, 0.0, 0.0),
     }
     
-    # Reward term help text
+    # Reward term help text - expanded for new terms
     weight_help = {
-        "progress": "Reward for distance moved toward goal. Higher = more aggressive toward goal. Recommended: 5-20",
-        "heading": "Reward for turning toward goal direction. Small shaping term. Recommended: 1-3",
-        "velocity": "Reward for moving distance per step, regardless of direction. Use small to moderate values: 1-5",
-        "time": "Time penalty per step. More negative = faster episodes. Keep tiny early on: -0.005 to -0.01",
-        "smooth": "Penalty for action changes. More negative = smoother motions. Polish term: -0.01 to -0.2",
-        "collision": "Penalty when colliding. More negative = stronger avoidance. Recommended: -50 to -75",
-        "goal_bonus": "Bonus for reaching goal. Higher = more motivated to complete. Recommended: 50-100",
-        "stuck": "Penalty for getting stuck. More negative = stronger motivation to keep moving. Recommended: -20 to -30",
-        "clearance": "Penalty for being too close to obstacles. More negative = keeps more distance. Recommended: -0.3 to -1.0",
+        "progress": "Distance moved toward goal. Recommended: 10-20",
+        "heading": "Turning toward goal direction. Small shaping: 1-3",
+        "velocity": "Speed toward goal when far. Shaping: 0.3-0.5",
+        "near_goal_speed": "Penalize speed near goal. Negative to slow down: -0.5 to -2.0",
+        "time": "Time penalty per step. Keep tiny: -0.005 to -0.01",
+        "smooth": "Action smoothness. Polish only: 0 initially, -0.05 to -0.2 later",
+        "collision": "Collision penalty. Recommended: -40 to -60",
+        "goal_bonus": "Success reward. BIG: 80-150",
+        "stuck": "Stuck penalty. Recommended: -15 to -25",
+        "clearance": "Too close to obstacles. 0 initially, -0.3 to -1.0 later",
     }
     
     new_weights = {}
@@ -305,7 +358,9 @@ def render_sidebar(config_files: List[Path]) -> tuple:
     st.sidebar.markdown("---")
     st.sidebar.subheader("🔍 Filters")
     
-    run_id_filter = st.sidebar.text_input("Run ID filter:", value="", help="Filter episodes by run_id")
+    # If we loaded a saved run, pre-fill the run_id_filter
+    default_filter = run_name_filter if run_name_filter else ""
+    run_id_filter = st.sidebar.text_input("Run ID filter:", value=default_filter, help="Filter episodes by run_id")
     last_n = st.sidebar.number_input("Last N episodes:", min_value=10, max_value=10000, value=100, step=10)
     
     st.sidebar.markdown("---")
@@ -409,12 +464,12 @@ def compute_reward_percentages(df: pd.DataFrame, weights: Dict[str, float]) -> p
     return contrib_df
 
 
-def render_reward_percentages_pie(df: pd.DataFrame, weights: Dict[str, float]) -> None:
+def render_reward_percentages_pie(df: pd.DataFrame, config: Dict[str, Any]) -> None:
     """Render pie chart showing overall reward term percentages."""
     st.subheader("🥧 Reward Term Breakdown")
-    st.caption("Overall percentage contribution of each reward term across all episodes (weighted, absolute values).")
+    st.caption("Overall percentage contribution of each reward term across all episodes (only enabled terms, weighted, absolute values).")
     
-    contrib_df = compute_reward_percentages(df, weights)
+    contrib_df = compute_reward_percentages(df, config)
     
     if contrib_df.empty:
         st.info("No reward term data available yet.")
@@ -439,7 +494,10 @@ def render_reward_percentages_pie(df: pd.DataFrame, weights: Dict[str, float]) -
     with st.expander("📊 Detailed Breakdown"):
         display_df = contrib_df.copy()
         display_df["percentage"] = display_df["percentage"].apply(lambda x: f"{x:.1f}%")
+        display_df["raw_contribution"] = display_df["raw_contribution"].apply(lambda x: f"{x:+.2f}")
         display_df["contribution"] = display_df["contribution"].apply(lambda x: f"{x:.2f}")
+        display_df = display_df[["term", "percentage", "contribution", "raw_contribution"]]
+        display_df.columns = ["Term", "Percentage", "Abs Value", "Raw Value"]
         st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 
@@ -601,12 +659,12 @@ def main():
         render_return_chart(df)
     
     with col2:
-        render_reward_percentages_pie(df, weights)
+        render_reward_percentages_pie(df, config)
     
     st.markdown("---")
     
     # Second row: Reward terms over time (full width)
-    render_reward_terms_chart(df, weights)
+    render_reward_terms_chart(df, config)
     
     st.markdown("---")
     
