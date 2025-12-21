@@ -5,10 +5,20 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
+
+def _require_dashboard_deps():
+    pytest.importorskip("streamlit")
+    pytest.importorskip("streamlit_autorefresh")
+    pytest.importorskip("altair")
+    pytest.importorskip("pandas")
+
 
 def test_dashboard_with_fake_data():
     """Test that dashboard utilities work with minimal fake episode data."""
     # This test doesn't launch Streamlit, just tests the data processing functions
+    _require_dashboard_deps()
     
     from neoskidrl.ui.reward_dashboard import (
         load_episodes_jsonl,
@@ -89,4 +99,3 @@ def test_dashboard_with_fake_data():
 
 if __name__ == "__main__":
     test_dashboard_with_fake_data()
-

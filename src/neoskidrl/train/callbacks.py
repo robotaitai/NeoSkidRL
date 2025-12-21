@@ -123,6 +123,10 @@ class EpisodeJSONLLogger(BaseCallback):
         self._ep_success = None
         self._ep_collision = None
         self._ep_stuck = None
+        self._ep_timeout = None
+        self._ep_last_dist = None
+        self._ep_sum_abs_v = None
+        self._ep_sum_abs_wz = None
         
     def _on_training_start(self) -> None:
         """Initialize tracking arrays for each parallel environment."""
@@ -133,6 +137,10 @@ class EpisodeJSONLLogger(BaseCallback):
         self._ep_success = [False] * n_envs
         self._ep_collision = [False] * n_envs
         self._ep_stuck = [False] * n_envs
+        self._ep_timeout = [False] * n_envs
+        self._ep_last_dist = [None] * n_envs
+        self._ep_sum_abs_v = [0.0] * n_envs
+        self._ep_sum_abs_wz = [0.0] * n_envs
         
         # Ensure output directory exists
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,6 +173,14 @@ class EpisodeJSONLLogger(BaseCallback):
                     self._ep_collision[env_idx] = self._ep_collision[env_idx] or bool(info["collision"])
                 if "stuck" in info:
                     self._ep_stuck[env_idx] = self._ep_stuck[env_idx] or bool(info["stuck"])
+                if "timeout" in info:
+                    self._ep_timeout[env_idx] = self._ep_timeout[env_idx] or bool(info["timeout"])
+                if "dist" in info:
+                    self._ep_last_dist[env_idx] = float(info["dist"])
+                if "speed_v" in info:
+                    self._ep_sum_abs_v[env_idx] += abs(float(info["speed_v"]))
+                if "speed_wz" in info:
+                    self._ep_sum_abs_wz[env_idx] += abs(float(info["speed_wz"]))
                 
                 # Write episode data when done
                 if done:
@@ -174,6 +190,10 @@ class EpisodeJSONLLogger(BaseCallback):
                         success=self._ep_success[env_idx],
                         collision=self._ep_collision[env_idx],
                         stuck=self._ep_stuck[env_idx],
+                        timeout=self._ep_timeout[env_idx],
+                        final_dist=self._ep_last_dist[env_idx],
+                        mean_abs_v=(self._ep_sum_abs_v[env_idx] / max(1, self._ep_lengths[env_idx])),
+                        mean_abs_wz=(self._ep_sum_abs_wz[env_idx] / max(1, self._ep_lengths[env_idx])),
                         reward_terms_sum=self._ep_reward_terms[env_idx] or {},
                     )
                     
@@ -184,6 +204,10 @@ class EpisodeJSONLLogger(BaseCallback):
                     self._ep_success[env_idx] = False
                     self._ep_collision[env_idx] = False
                     self._ep_stuck[env_idx] = False
+                    self._ep_timeout[env_idx] = False
+                    self._ep_last_dist[env_idx] = None
+                    self._ep_sum_abs_v[env_idx] = 0.0
+                    self._ep_sum_abs_wz[env_idx] = 0.0
         
         return True
     
@@ -194,9 +218,15 @@ class EpisodeJSONLLogger(BaseCallback):
         success: bool,
         collision: bool,
         stuck: bool,
+        timeout: bool,
+        final_dist: float | None,
+        mean_abs_v: float,
+        mean_abs_wz: float,
         reward_terms_sum: dict,
     ) -> None:
         """Write a single episode record to the JSONL file."""
+        sum_progress = float(reward_terms_sum.get("progress", 0.0))
+        sum_time = float(reward_terms_sum.get("time", 0.0))
         record = {
             "timestamp": time.time(),
             "run_id": self.run_id,
@@ -208,6 +238,12 @@ class EpisodeJSONLLogger(BaseCallback):
             "success": success,
             "collision": collision,
             "stuck": stuck,
+            "timeout": timeout,
+            "final_dist": float(final_dist) if final_dist is not None else None,
+            "mean_abs_v": float(mean_abs_v),
+            "mean_abs_wz": float(mean_abs_wz),
+            "sum_progress": sum_progress,
+            "sum_time": sum_time,
             "reward_terms_sum": {k: float(v) for k, v in reward_terms_sum.items()},
             "timesteps": self.num_timesteps,
         }
@@ -218,5 +254,14 @@ class EpisodeJSONLLogger(BaseCallback):
         
         self._episode_idx += 1
         
-        if self.verbose > 0 and self._episode_idx % 10 == 0:
-            print(f"[EpisodeLogger] Logged episode {self._episode_idx}: return={ep_return:.2f}, success={success}")
+        if self.verbose > 0:
+            if self._episode_idx == 0:
+                print(
+                    "[RewardDebug] ep0 "
+                    f"sum_progress={sum_progress:.3f} sum_time={sum_time:.3f} "
+                    f"collision={collision} stuck={stuck} timeout={timeout} "
+                    f"final_dist={record['final_dist']} mean|v|={mean_abs_v:.3f} "
+                    f"mean|w|={mean_abs_wz:.3f}"
+                )
+            elif self._episode_idx % 10 == 0:
+                print(f"[EpisodeLogger] Logged episode {self._episode_idx}: return={ep_return:.2f}, success={success}")

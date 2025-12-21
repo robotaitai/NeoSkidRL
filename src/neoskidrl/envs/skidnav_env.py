@@ -430,7 +430,8 @@ class NeoSkidNavEnv(gym.Env):
         # success
         pos_ok = dist <= float(self.cfg["task"]["success"]["pos_tol_m"])
         yaw_ok = abs(dyaw) <= math.radians(float(self.cfg["task"]["success"]["yaw_tol_deg"]))
-        spd = self._speed_obs()[0]
+        spd_obs = self._speed_obs()
+        spd = float(spd_obs[0])
         stop_ok = spd <= float(self.cfg["task"]["success"]["stop_speed_mps"])
         success = bool(pos_ok and yaw_ok and stop_ok)
         
@@ -484,11 +485,14 @@ class NeoSkidNavEnv(gym.Env):
             "success": success,
             "collision": collided,
             "stuck": stuck,
+            "timeout": truncated,
             "steps": self.steps,
             "reward_terms": terms,
             "reward_total": float(r),
             "base_xy": base_xy.copy(),
             "base_yaw": yaw,
+            "speed_v": float(spd_obs[0]),
+            "speed_wz": float(spd_obs[1]),
         }
         return obs, float(r), terminated, truncated, info
 

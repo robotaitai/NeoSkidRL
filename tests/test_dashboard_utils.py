@@ -8,9 +8,16 @@ from pathlib import Path
 import pytest
 
 
+def _require_dashboard_deps():
+    pytest.importorskip("streamlit")
+    pytest.importorskip("streamlit_autorefresh")
+    pytest.importorskip("altair")
+    pytest.importorskip("pandas")
+
+
 def test_load_episodes_jsonl():
     """Test loading episodes from JSONL file."""
-    pytest.importorskip("pandas")
+    _require_dashboard_deps()
     
     from neoskidrl.ui.reward_dashboard import load_episodes_jsonl
     
@@ -63,7 +70,7 @@ def test_load_episodes_jsonl():
 
 def test_load_episodes_with_filter():
     """Test filtering episodes by run_id."""
-    pytest.importorskip("pandas")
+    _require_dashboard_deps()
     
     from neoskidrl.ui.reward_dashboard import load_episodes_jsonl
     
@@ -89,7 +96,7 @@ def test_load_episodes_with_filter():
 
 def test_compute_metrics():
     """Test metrics computation from episode dataframe."""
-    pytest.importorskip("pandas")
+    _require_dashboard_deps()
     import pandas as pd
     
     from neoskidrl.ui.reward_dashboard import compute_metrics
@@ -117,6 +124,7 @@ def test_compute_metrics():
 
 def test_get_reward_weights_legacy_format():
     """Test extracting reward weights from legacy config format."""
+    _require_dashboard_deps()
     from neoskidrl.ui.reward_dashboard import get_reward_weights
     
     config = {
@@ -140,6 +148,7 @@ def test_get_reward_weights_legacy_format():
 
 def test_get_reward_weights_new_format():
     """Test extracting reward weights from new config format."""
+    _require_dashboard_deps()
     from neoskidrl.ui.reward_dashboard import get_reward_weights
     
     config = {
@@ -162,6 +171,7 @@ def test_get_reward_weights_new_format():
 
 def test_set_reward_weights():
     """Test updating reward weights in config."""
+    _require_dashboard_deps()
     from neoskidrl.ui.reward_dashboard import set_reward_weights
     
     config = {
@@ -186,7 +196,7 @@ def test_set_reward_weights():
 
 def test_expand_reward_terms():
     """Test expanding reward_terms_sum into separate columns."""
-    pytest.importorskip("pandas")
+    _require_dashboard_deps()
     import pandas as pd
     
     from neoskidrl.ui.reward_dashboard import expand_reward_terms
@@ -207,4 +217,3 @@ def test_expand_reward_terms():
     assert "term_time" in expanded.columns
     assert expanded.iloc[0]["term_progress"] == 1.0
     assert expanded.iloc[1]["term_time"] == -20.0
-
