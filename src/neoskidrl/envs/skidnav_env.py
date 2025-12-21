@@ -99,6 +99,14 @@ class NeoSkidNavEnv(gym.Env):
         self.frame_skip = int(self.cfg["env"].get("frame_skip", 1))
         self.max_steps = int(self.cfg["env"]["episode_sec"] / (self.dt * self.frame_skip))
         self.model.opt.timestep = self.dt
+        print(
+            "[CFG]",
+            "dt=", self.dt,
+            "frame_skip=", self.frame_skip,
+            "max_steps=", self.max_steps,
+            "count_range=", self.cfg["world"]["obstacles"]["count_range"],
+            "max_count=", self.cfg["world"]["obstacles"]["max_count"],
+        )
 
         self.rays = int(self.cfg["sensors"]["lidar"]["rays"])
         self.lidar_range = float(self.cfg["sensors"]["lidar"]["range_m"])
@@ -205,9 +213,12 @@ class NeoSkidNavEnv(gym.Env):
             self.model.geom_size[gid] = np.array([sx, sz, 0.0], dtype=np.float64)
         else:
             raise ValueError(f"Unknown obstacle shape: {shape}")
+        self.model.geom_rgba[gid, 3] = 1.0
 
     def _hide_obstacle(self, idx: int):
         self._set_mocap_obstacle(idx, 100.0, 100.0, 0.0, 0.01, 0.01, 0.01, shape="box")
+        gid = self.obs_geom_ids[idx]
+        self.model.geom_rgba[gid, 3] = 0.0
 
     def _sample_xy(self, arena_x: float, arena_y: float, margin: float) -> Tuple[float, float]:
         x = self.np_random.uniform(-arena_x/2 + margin, arena_x/2 - margin)
@@ -249,6 +260,7 @@ class NeoSkidNavEnv(gym.Env):
         margin = float(self.cfg["world"]["obstacles"]["margin_m"])
         count_lo, count_hi = self.cfg["world"]["obstacles"]["count_range"]
         n_obs = int(self.np_random.integers(int(count_lo), int(count_hi) + 1))
+        self._n_obs = n_obs
         goal_cfg = self.cfg["world"].get("goal", {})
         goal_fixed = bool(goal_cfg.get("fixed", False))
         goal_xy = None
@@ -409,6 +421,7 @@ class NeoSkidNavEnv(gym.Env):
             "goal_yaw": self.goal_yaw,
             "base_xy": base_xy.copy(),
             "base_yaw": base_yaw,
+            "n_obs": int(getattr(self, "_n_obs", -1)),
         }
         return obs, info
 
