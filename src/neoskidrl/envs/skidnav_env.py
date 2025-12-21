@@ -26,16 +26,51 @@ def _quat_to_yaw(qw: float, qx: float, qy: float, qz: float) -> float:
     return math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
 
 
-def _ray_aabb_2d(origin_xy: np.ndarray, dir_xy: np.ndarray, box_min: np.ndarray, box_max: np.ndarray) -> float:
+def _ray_aabb_2d(
+    origin_x: float,
+    origin_y: float,
+    dir_x: float,
+    dir_y: float,
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+) -> float:
     # Slab intersection in 2D. Returns distance to entry or +inf if no hit.
-    inv = 1.0 / np.where(np.abs(dir_xy) < 1e-9, 1e-9, dir_xy)
-    t1 = (box_min - origin_xy) * inv
-    t2 = (box_max - origin_xy) * inv
-    tmin = np.maximum(np.minimum(t1, t2)[0], np.minimum(t1, t2)[1])
-    tmax = np.minimum(np.maximum(t1, t2)[0], np.maximum(t1, t2)[1])
-    if tmax < 0 or tmin > tmax:
+    tmin = -float("inf")
+    tmax = float("inf")
+
+    if abs(dir_x) < 1e-9:
+        if origin_x < xmin or origin_x > xmax:
+            return float("inf")
+    else:
+        inv = 1.0 / dir_x
+        t1 = (xmin - origin_x) * inv
+        t2 = (xmax - origin_x) * inv
+        if t1 > t2:
+            t1, t2 = t2, t1
+        tmin = max(tmin, t1)
+        tmax = min(tmax, t2)
+        if tmin > tmax:
+            return float("inf")
+
+    if abs(dir_y) < 1e-9:
+        if origin_y < ymin or origin_y > ymax:
+            return float("inf")
+    else:
+        inv = 1.0 / dir_y
+        t1 = (ymin - origin_y) * inv
+        t2 = (ymax - origin_y) * inv
+        if t1 > t2:
+            t1, t2 = t2, t1
+        tmin = max(tmin, t1)
+        tmax = min(tmax, t2)
+        if tmin > tmax:
+            return float("inf")
+
+    if tmax < 0:
         return float("inf")
-    return float(max(tmin, 0.0))
+    return float(tmin) if tmin > 0 else 0.0
 
 
 class NeoSkidNavEnv(gym.Env):
@@ -67,6 +102,9 @@ class NeoSkidNavEnv(gym.Env):
 
         self.rays = int(self.cfg["sensors"]["lidar"]["rays"])
         self.lidar_range = float(self.cfg["sensors"]["lidar"]["range_m"])
+        angles = np.linspace(-math.pi, math.pi, self.rays, endpoint=False, dtype=np.float64)
+        self._lidar_cos = np.cos(angles)
+        self._lidar_sin = np.sin(angles)
 
         self.v_max = float(self.cfg["limits"]["v_max"])
         self.w_max = float(self.cfg["limits"]["w_max"])
@@ -128,6 +166,7 @@ class NeoSkidNavEnv(gym.Env):
         self._applied_action = None
         self._prev_applied_action = None
         self._prev_goal_angle = None
+        self._obs_aabbs: list[tuple[float, float, float, float]] = []
         self._stuck_counter = 0
         self._stuck_limit_steps = int(self.cfg["task"]["failure"]["stuck_sec"] / (self.dt * self.frame_skip))
 
@@ -259,6 +298,8 @@ class NeoSkidNavEnv(gym.Env):
                 self._set_mocap_obstacle(i, x, y, sz, sx, sy, sz, shape=shape)
                 break
 
+        self._obs_aabbs = [(x - sx, y - sy, x + sx, y + sy) for (x, y, sx, sy) in obs_xy]
+
         # fixed goal
         if goal_fixed and goal_xy is not None:
             self._set_goal(goal_xy[0], goal_xy[1], goal_yaw)
@@ -285,35 +326,22 @@ class NeoSkidNavEnv(gym.Env):
 
     def _compute_lidar(self) -> np.ndarray:
         base_xy, yaw = self._get_base_pose()
-        angles = np.linspace(-math.pi, math.pi, self.rays, endpoint=False)
         dists = np.full((self.rays,), self.lidar_range, dtype=np.float32)
 
-        # Build obstacle AABBs from current mocap pos + geom sizes
-        aabbs = []
-        for i in range(self.max_obs):
-            mid = self.obs_mocap_ids[i]
-            ox, oy, _ = self.data.mocap_pos[mid]
-            # hidden?
-            if abs(ox) > 50 or abs(oy) > 50:
-                continue
-            gid = self.obs_geom_ids[i]
-            gtype = int(self.model.geom_type[gid])
-            gsize = self.model.geom_size[gid]
-            if gtype == int(mujoco.mjtGeom.mjGEOM_CYLINDER):
-                sx = sy = float(gsize[0])
-            else:
-                sx = float(gsize[0])
-                sy = float(gsize[1])
-            box_min = np.array([ox - sx, oy - sy], dtype=np.float64)
-            box_max = np.array([ox + sx, oy + sy], dtype=np.float64)
-            aabbs.append((box_min, box_max))
+        if not self._obs_aabbs:
+            return (dists / self.lidar_range).astype(np.float32)
 
-        for k, a in enumerate(angles):
-            th = yaw + float(a)
-            dir_xy = np.array([math.cos(th), math.sin(th)], dtype=np.float64)
+        base_x = float(base_xy[0])
+        base_y = float(base_xy[1])
+        cy = math.cos(yaw)
+        sy = math.sin(yaw)
+
+        for k in range(self.rays):
+            dir_x = cy * float(self._lidar_cos[k]) - sy * float(self._lidar_sin[k])
+            dir_y = sy * float(self._lidar_cos[k]) + cy * float(self._lidar_sin[k])
             best = float("inf")
-            for (bmin, bmax) in aabbs:
-                t = _ray_aabb_2d(base_xy, dir_xy, bmin, bmax)
+            for (xmin, ymin, xmax, ymax) in self._obs_aabbs:
+                t = _ray_aabb_2d(base_x, base_y, dir_x, dir_y, xmin, ymin, xmax, ymax)
                 if t < best:
                     best = t
             if best < float("inf"):
@@ -350,8 +378,8 @@ class NeoSkidNavEnv(gym.Env):
         v = math.sqrt(vx*vx + vy*vy)
         return np.array([v, wz], dtype=np.float32)
 
-    def _get_obs(self) -> np.ndarray:
-        lidar = self._compute_lidar()
+    def _get_obs(self, lidar_override: np.ndarray | None = None) -> np.ndarray:
+        lidar = lidar_override if lidar_override is not None else self._compute_lidar()
         goal = self._goal_obs()
         spd = self._speed_obs()
         return np.concatenate([lidar, goal, spd]).astype(np.float32)
@@ -461,7 +489,7 @@ class NeoSkidNavEnv(gym.Env):
 
         stuck = self._stuck_counter >= self._stuck_limit_steps
         
-        # Compute lidar for min distance (clearance reward)
+        # Compute lidar once (min distance + obs)
         lidar_normalized = self._compute_lidar()
         min_lidar_norm = float(np.min(lidar_normalized))
         min_lidar = min_lidar_norm * self.lidar_range  # Convert back to meters
@@ -503,7 +531,7 @@ class NeoSkidNavEnv(gym.Env):
 
         self._prev_dist = dist
         self._prev_goal_angle = goal_angle
-        obs = self._get_obs()
+        obs = self._get_obs(lidar_override=lidar_normalized)
         info = {
             "dist": dist,
             "dyaw": dyaw,

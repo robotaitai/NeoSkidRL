@@ -10,6 +10,15 @@ import numpy as np
 from neoskidrl.utils import generate_run_name
 
 
+def _make_env(config_path: str, render_mode: str | None = None):
+    def _init():
+        from neoskidrl.envs import NeoSkidNavEnv
+
+        return NeoSkidNavEnv(config_path=config_path, render_mode=render_mode)
+
+    return _init
+
+
 def _lidar_points(obs: np.ndarray, rays: int, lidar_range: float) -> tuple[np.ndarray, np.ndarray, float, float]:
     ranges = obs[:rays] * lidar_range
     angles = np.linspace(-np.pi, np.pi, rays, endpoint=False)
@@ -97,6 +106,7 @@ def run_training_chunks(
     device: str,
     enable_viz: bool,
     num_envs: int = 1,
+    vec_env: str | None = None,
     batch_size: int = 256,
     buffer_size: int = 200_000,
     learning_rate: float = 3e-4,
@@ -115,7 +125,7 @@ def run_training_chunks(
     try:
         from stable_baselines3 import SAC
         from stable_baselines3.common.callbacks import CallbackList
-        from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
+        from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecMonitor
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("stable-baselines3 not installed. Use `pip install -e .[train]`.") from exc
 
@@ -133,8 +143,13 @@ def run_training_chunks(
     print(f"{'='*60}\n")
     
     print(f"Creating {num_envs} parallel training environments...")
-    train_env = DummyVecEnv([lambda: NeoSkidNavEnv(config_path=config_path, render_mode=None) 
-                             for _ in range(num_envs)])
+    if vec_env is None:
+        vec_env = "subproc" if num_envs >= 4 else "dummy"
+    env_fns = [_make_env(config_path=config_path, render_mode=None) for _ in range(num_envs)]
+    if vec_env == "subproc" and num_envs > 1:
+        train_env = SubprocVecEnv(env_fns)
+    else:
+        train_env = DummyVecEnv(env_fns)
     train_env = VecMonitor(train_env)
     train_env.seed(seed)
     train_env.reset()
@@ -249,6 +264,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--run-name", default=None, help="Run name (auto-generated if not provided).")
     parser.add_argument("--num-envs", type=int, default=1, help="Number of parallel environments.")
+    parser.add_argument(
+        "--vec-env",
+        choices=["dummy", "subproc"],
+        default=None,
+        help="Vec env type (default: subproc if num_envs>=4).",
+    )
     parser.add_argument("--batch-size", type=int, default=256, help="Batch size for SAC training.")
     parser.add_argument("--buffer-size", type=int, default=200_000, help="Replay buffer size.")
     parser.add_argument("--learning-rate", type=float, default=3e-4, help="Learning rate for SAC.")
@@ -306,6 +327,7 @@ def main() -> None:
         device=args.device,
         enable_viz=enable_viz,
         num_envs=args.num_envs,
+        vec_env=args.vec_env,
         batch_size=args.batch_size,
         buffer_size=args.buffer_size,
         learning_rate=args.learning_rate,

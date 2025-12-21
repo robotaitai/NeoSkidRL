@@ -67,6 +67,7 @@ Optional flags:
 - `--viz` to enable the matplotlib rollout after each chunk.
 - `--no-eval` to disable periodic evaluation.
 - `--eval-every-steps 20000` and `--eval-episodes 10` to control eval cadence.
+- `--vec-env subproc|dummy` to control vectorization (defaults to subproc when `num-envs>=4`).
 
 ## Eval mode (scenarios + video)
 
