@@ -396,13 +396,82 @@ def render_sidebar(config_files: List[Path], saved_runs: List[Path]) -> tuple:
     
     # If we loaded a saved run, pre-fill the run_id_filter
     default_filter = run_name_filter if run_name_filter else ""
-    run_id_filter = st.sidebar.text_input("Run ID filter:", value=default_filter, help="Filter episodes by run_id")
-    last_n = st.sidebar.number_input("Last N episodes:", min_value=10, max_value=10000, value=100, step=10)
+    run_id_filter = st.sidebar.text_input("Run ID filter:", value=default_filter, help="Filter episodes by run_id (partial match supported)")
     
+    # Episode limit with "All" option
+    show_all = st.sidebar.checkbox("Show all episodes", value=False, help="Show all episodes (may be slow for large datasets)")
+    if show_all:
+        last_n = None
+        st.sidebar.info("Showing all episodes")
+    else:
+        last_n = st.sidebar.number_input("Last N episodes:", min_value=10, max_value=50000, value=500, step=50, help="Number of most recent episodes to display")
+    
+    # Auto-refresh control
     st.sidebar.markdown("---")
+    auto_refresh_enabled = st.sidebar.checkbox("Auto-refresh (2s)", value=True, help="Automatically refresh dashboard every 2 seconds")
     refresh_clicked = st.sidebar.button("🔄 Refresh Now", use_container_width=True)
     
-    return config_path, new_weights, run_id_filter, last_n, refresh_clicked
+    return config_path, new_weights, run_id_filter, last_n, refresh_clicked, auto_refresh_enabled
+
+
+def render_run_comparison(saved_runs: List[Path], episodes_path: Path, config: Dict[str, Any]) -> None:
+    """Render comparison table of multiple runs."""
+    with st.expander("📊 Compare Multiple Runs", expanded=False):
+        st.caption("Select multiple runs to compare their performance side-by-side")
+        
+        if not saved_runs:
+            st.info("No saved runs found to compare.")
+            return
+        
+        # Get unique run names from saved runs
+        run_names = set()
+        for run_path in saved_runs:
+            run_name = extract_run_name_from_path(run_path)
+            run_names.add(run_name)
+        
+        run_names = sorted(list(run_names), reverse=True)[:10]  # Show top 10 most recent
+        
+        selected_runs = st.multiselect(
+            "Select runs to compare:",
+            run_names,
+            default=run_names[:3] if len(run_names) >= 3 else run_names,
+            help="Select 2-5 runs to compare their metrics"
+        )
+        
+        if not selected_runs:
+            st.info("Select at least one run to see comparison.")
+            return
+        
+        # Load data for each selected run
+        comparison_data = []
+        for run_name in selected_runs:
+            df = load_episodes_jsonl(episodes_path, run_id_filter=run_name, last_n=None)
+            if not df.empty:
+                metrics = compute_metrics(df)
+                comparison_data.append({
+                    "Run": run_name,
+                    "Episodes": len(df),
+                    "Success %": f"{metrics.get('success_rate', 0):.1f}%",
+                    "Collision %": f"{metrics.get('collision_rate', 0):.1f}%",
+                    "Stuck %": f"{metrics.get('stuck_rate', 0):.1f}%",
+                    "Avg Return": f"{metrics.get('avg_return', 0):.2f}",
+                    "Avg Ep Len": f"{metrics.get('avg_ep_len', 0):.1f}",
+                })
+        
+        if comparison_data:
+            comparison_df = pd.DataFrame(comparison_data)
+            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+            
+            # Add download button
+            csv = comparison_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Comparison CSV",
+                data=csv,
+                file_name="run_comparison.csv",
+                mime="text/csv",
+            )
+        else:
+            st.warning("No episode data found for selected runs.")
 
 
 def render_metric_cards(metrics: Dict[str, float]) -> None:
@@ -677,9 +746,6 @@ def main():
         **Video**: Latest evaluation video appears automatically after running eval.
         """)
     
-    # Auto-refresh every 2 seconds
-    st_autorefresh(interval=2000, key="dashboard_refresh")
-    
     # Find available config files - resolve to absolute paths
     config_dir = Path("config").resolve()
     src_config_dir = Path("src/neoskidrl/config").resolve()
@@ -698,7 +764,11 @@ def main():
     saved_runs = find_saved_runs()
     
     # Render sidebar
-    config_path, weights, run_id_filter, last_n, refresh_clicked = render_sidebar(config_files, saved_runs)
+    config_path, weights, run_id_filter, last_n, refresh_clicked, auto_refresh_enabled = render_sidebar(config_files, saved_runs)
+    
+    # Auto-refresh every 2 seconds (if enabled)
+    if auto_refresh_enabled:
+        st_autorefresh(interval=2000, key="dashboard_refresh")
     
     # Load config for proper reward calculations
     config = load_config_yaml(config_path) if config_path else {}
@@ -706,6 +776,19 @@ def main():
     # Load episode data
     episodes_path = Path("runs/metrics/episodes.jsonl")
     df = load_episodes_jsonl(episodes_path, run_id_filter=run_id_filter, last_n=last_n)
+    
+    # Show episode count info
+    if not df.empty:
+        total_episodes = len(df)
+        if last_n is None:
+            st.info(f"📊 Showing all **{total_episodes}** episodes" + (f" (filtered by: {run_id_filter})" if run_id_filter else ""))
+        else:
+            st.info(f"📊 Showing last **{min(last_n, total_episodes)}** of {total_episodes} episodes" + (f" (filtered by: {run_id_filter})" if run_id_filter else ""))
+    
+    # Run comparison section
+    render_run_comparison(saved_runs, episodes_path, config)
+    
+    st.markdown("---")
     
     # Compute metrics
     metrics = compute_metrics(df)
