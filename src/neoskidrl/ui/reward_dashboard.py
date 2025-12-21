@@ -242,9 +242,45 @@ def compute_metrics(df: pd.DataFrame) -> Dict[str, float]:
 # UI Components
 # ============================================================================
 
-def render_sidebar(config_files: List[Path]) -> tuple:
-    """Render sidebar with config selection and weight sliders."""
+def render_sidebar(config_files: List[Path], saved_runs: List[Path]) -> tuple:
+    """Render sidebar with config selection, run selection, and weight sliders."""
     st.sidebar.title("⚙️ Configuration")
+    
+    # Saved runs selection
+    run_name_filter = None
+    if saved_runs:
+        st.sidebar.subheader("📦 Load Saved Run")
+        
+        # Create display names for runs - safely convert to relative paths
+        cwd = Path.cwd()
+        run_display_map = {}
+        for p in saved_runs[:20]:  # Limit to 20 most recent
+            try:
+                abs_path = p.resolve()
+                rel_path = str(abs_path.relative_to(cwd))
+            except ValueError:
+                # If path is outside cwd, use as-is
+                rel_path = str(p)
+            run_display_map[rel_path] = p
+        
+        run_options = ["Current Config"] + list(run_display_map.keys())
+        selected_run_option = st.sidebar.selectbox(
+            "Select Run",
+            run_options,
+            index=0,
+            help="Load config and weights from a saved checkpoint"
+        )
+        
+        selected_run_path = None
+        if selected_run_option != "Current Config":
+            selected_run_path = run_display_map.get(selected_run_option)
+        
+        if selected_run_path:
+            st.sidebar.info(f"🔍 Viewing: {selected_run_path.stem}")
+            # Extract run name for filtering episodes
+            run_name_filter = extract_run_name_from_path(selected_run_path)
+        
+        st.sidebar.markdown("---")
     
     # Config file selection - resolve to absolute then convert to relative for display
     cwd = Path.cwd()
@@ -415,42 +451,54 @@ def render_return_chart(df: pd.DataFrame) -> None:
     st.altair_chart(chart, use_container_width=True)
 
 
-def compute_reward_percentages(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
-    """Compute average percentage contribution of each reward term."""
-    if df.empty:
+def compute_reward_percentages(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Compute average percentage contribution of each reward term using proper reward functions.
+    
+    Args:
+        df: DataFrame with episodes
+        config: Config dict with reward weights and enabled_terms
+    
+    Returns:
+        DataFrame with term, contribution, percentage, and raw_contribution columns
+    """
+    if df.empty or "reward_terms_sum" not in df.columns:
         return pd.DataFrame()
-
-    if "reward_contrib_abs_sum" in df.columns:
-        df_expanded = expand_reward_contrib(df, "reward_contrib_abs_sum", "abs_")
-        term_cols = [col for col in df_expanded.columns if col.startswith("abs_")]
-        if not term_cols:
-            return pd.DataFrame()
-        contributions = {}
-        for term_col in term_cols:
-            term_name = term_col.replace("abs_", "")
-            contributions[term_name] = float(df_expanded[term_col].sum())
-    else:
-        if "reward_terms_sum" not in df.columns:
-            return pd.DataFrame()
-
-        df_expanded = expand_reward_terms(df)
-        term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
-
-        if not term_cols:
-            return pd.DataFrame()
-
-        # Compute weighted contributions for all episodes
-        contributions = {}
-        for term_col in term_cols:
-            term_name = term_col.replace("term_", "")
+    
+    df_expanded = expand_reward_terms(df)
+    term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
+    
+    if not term_cols:
+        return pd.DataFrame()
+    
+    # Get weights and enabled terms using proper function
+    try:
+        weights, enabled_terms = _resolve_reward_weights(config)
+    except:
+        # Fallback to simple weight extraction
+        weights = get_reward_weights(config)
+        enabled_terms = list(weights.keys())
+    
+    enabled_set = set(enabled_terms)
+    
+    # Compute weighted contributions for all episodes
+    contributions = {}
+    for term_col in term_cols:
+        term_name = term_col.replace("term_", "")
+        
+        # Only include enabled terms
+        if term_name in enabled_set:
             weight = weights.get(term_name, 0.0)
             # Sum across all episodes, then take absolute value for percentage calc
             total_contribution = (df_expanded[term_col] * weight).sum()
             contributions[term_name] = total_contribution
     
+    if not contributions:
+        return pd.DataFrame()
+    
     # Convert to dataframe
     contrib_df = pd.DataFrame([
-        {"term": term, "contribution": abs(val)}
+        {"term": term, "contribution": abs(val), "raw_contribution": val}
         for term, val in contributions.items()
     ])
     
@@ -460,6 +508,9 @@ def compute_reward_percentages(df: pd.DataFrame, weights: Dict[str, float]) -> p
         contrib_df["percentage"] = (contrib_df["contribution"] / total * 100).round(1)
     else:
         contrib_df["percentage"] = 0.0
+    
+    # Sort by contribution descending
+    contrib_df = contrib_df.sort_values("contribution", ascending=False)
     
     return contrib_df
 
@@ -501,42 +552,48 @@ def render_reward_percentages_pie(df: pd.DataFrame, config: Dict[str, Any]) -> N
         st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 
-def render_reward_terms_chart(df: pd.DataFrame, weights: Dict[str, float]) -> None:
+def render_reward_terms_chart(df: pd.DataFrame, config: Dict[str, Any]) -> None:
     """Render stacked area chart of reward term contributions."""
-    if df.empty or ("reward_terms_sum" not in df.columns and "reward_contrib_sum" not in df.columns):
+    if df.empty or "reward_terms_sum" not in df.columns:
         st.info("No reward terms data available yet.")
         return
     
     st.subheader("🎨 Reward Term Contributions Over Time")
-    st.caption("Shows how each reward term (weighted) contributes to total return over episodes. Adjust weights to balance behavior.")
+    st.caption("Shows how each enabled reward term (weighted) contributes to total return over episodes.")
     
-    if "reward_contrib_sum" in df.columns:
-        df_expanded = expand_reward_contrib(df, "reward_contrib_sum", "contrib_")
-        term_cols = [col for col in df_expanded.columns if col.startswith("contrib_")]
-        weight_lookup = None
-    else:
-        # Expand reward terms
-        df_expanded = expand_reward_terms(df)
-        term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
-        weight_lookup = weights
+    # Get weights and enabled terms using proper function
+    try:
+        weights, enabled_terms = _resolve_reward_weights(config)
+    except:
+        weights = get_reward_weights(config)
+        enabled_terms = list(weights.keys())
+    
+    enabled_set = set(enabled_terms)
+    
+    # Expand reward terms
+    df_expanded = expand_reward_terms(df)
+    
+    # Get term columns
+    term_cols = [col for col in df_expanded.columns if col.startswith("term_")]
     
     if not term_cols:
         st.info("No reward terms found in episode data.")
         return
     
-    # Compute weighted contributions
+    # Compute weighted contributions (only for enabled terms)
     chart_data = []
     for idx, row in df_expanded.iterrows():
         episode_idx = row.get("episode_idx", idx)
         for term_col in term_cols:
-            if weight_lookup is None:
-                term_name = term_col.replace("contrib_", "")
-                contribution = row.get(term_col, 0.0)
-            else:
-                term_name = term_col.replace("term_", "")
-                term_sum = row.get(term_col, 0.0)
-                weight = weight_lookup.get(term_name, 0.0)
-                contribution = term_sum * weight
+            term_name = term_col.replace("term_", "")
+            
+            # Only include enabled terms
+            if term_name not in enabled_set:
+                continue
+                
+            term_sum = row.get(term_col, 0.0)
+            weight = weights.get(term_name, 0.0)
+            contribution = term_sum * weight
             
             chart_data.append({
                 "episode_idx": episode_idx,
@@ -637,8 +694,14 @@ def main():
         st.error("No config files found! Please create a config YAML file.")
         return
     
+    # Find saved runs
+    saved_runs = find_saved_runs()
+    
     # Render sidebar
-    config_path, weights, run_id_filter, last_n, refresh_clicked = render_sidebar(config_files)
+    config_path, weights, run_id_filter, last_n, refresh_clicked = render_sidebar(config_files, saved_runs)
+    
+    # Load config for proper reward calculations
+    config = load_config_yaml(config_path) if config_path else {}
     
     # Load episode data
     episodes_path = Path("runs/metrics/episodes.jsonl")
