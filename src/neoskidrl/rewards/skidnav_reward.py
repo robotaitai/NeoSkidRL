@@ -14,6 +14,8 @@ def compute_reward_terms(
     stuck: bool = False,
     min_lidar: float | None = None,
     prev_action: np.ndarray | None = None,
+    goal_angle: float | None = None,
+    prev_goal_angle: float | None = None,
 ) -> Dict[str, float]:
     """
     Compute reward terms for skid-steer navigation.
@@ -21,12 +23,14 @@ def compute_reward_terms(
     Args:
         dist: Current distance to goal
         prev_dist: Previous distance to goal (None on first step)
-        action: Current action
+        action: Current applied action
         collided: Whether collision occurred
         success: Whether goal was reached
         stuck: Whether robot is stuck
         min_lidar: Minimum lidar reading (for clearance reward)
-        prev_action: Previous action (for smoothness)
+        prev_action: Previous applied action (for smoothness)
+        goal_angle: Current goal angle in robot frame (radians)
+        prev_goal_angle: Previous goal angle in robot frame (radians)
     """
     if prev_dist is None:
         prev_dist = dist
@@ -42,6 +46,11 @@ def compute_reward_terms(
         smooth = float(np.linalg.norm(action - prev_action))
     else:
         smooth = float(np.linalg.norm(action))
+
+    # Heading: reward turning toward the goal (positive when angle error shrinks)
+    heading = 0.0
+    if goal_angle is not None and prev_goal_angle is not None:
+        heading = float(abs(prev_goal_angle) - abs(goal_angle))
     
     # Collision: binary indicator
     collision = 1.0 if collided else 0.0
@@ -63,6 +72,7 @@ def compute_reward_terms(
         "progress": progress,
         "time": time,
         "smooth": smooth,
+        "heading": heading,
         "collision": collision,
         "goal_bonus": goal_bonus,
         "stuck": stuck_penalty,
@@ -75,6 +85,7 @@ def _weights_from_legacy(cfg: dict) -> Dict[str, float]:
         "progress": float(cfg.get("w_progress", 0.0)),
         "time": float(cfg.get("w_time", 0.0)),
         "smooth": float(cfg.get("w_smooth", 0.0)),
+        "heading": float(cfg.get("w_heading", 0.0)),
         "collision": float(cfg.get("w_collision", 0.0)),
         "goal_bonus": float(cfg.get("w_goal_bonus", 0.0)),
         "stuck": float(cfg.get("w_stuck", 0.0)),

@@ -95,6 +95,7 @@ def get_reward_weights(config: Dict[str, Any]) -> Dict[str, float]:
         "w_progress": "progress",
         "w_time": "time",
         "w_smooth": "smooth",
+        "w_heading": "heading",
         "w_collision": "collision",
         "w_goal_bonus": "goal_bonus",
     }
@@ -123,6 +124,7 @@ def set_reward_weights(config: Dict[str, Any], weights: Dict[str, float]) -> Dic
             "progress": "w_progress",
             "time": "w_time",
             "smooth": "w_smooth",
+            "heading": "w_heading",
             "collision": "w_collision",
             "goal_bonus": "w_goal_bonus",
         }
@@ -218,6 +220,7 @@ def render_sidebar(config_files: List[Path]) -> tuple:
     st.sidebar.markdown("""
     **Reward Terms Explained:**
     - **Progress**: Distance moved toward goal (positive = encourage)
+    - **Heading**: Turn toward the goal direction (positive = encourage alignment)
     - **Time**: Penalty per timestep (negative = encourage speed)
     - **Smooth**: Penalty for action changes (negative = encourage smoothness)
     - **Collision**: Penalty when hitting obstacles (negative = discourage)
@@ -231,6 +234,7 @@ def render_sidebar(config_files: List[Path]) -> tuple:
     # Default weight ranges
     weight_ranges = {
         "progress": (0.0, 20.0, 10.0),
+        "heading": (0.0, 5.0, 2.0),
         "time": (-1.0, 0.0, -0.01),
         "smooth": (-1.0, 0.0, -0.05),
         "collision": (-100.0, 0.0, -75.0),
@@ -242,6 +246,7 @@ def render_sidebar(config_files: List[Path]) -> tuple:
     # Reward term help text
     weight_help = {
         "progress": "Reward for distance moved toward goal. Higher = more aggressive toward goal. Recommended: 5-20",
+        "heading": "Reward for turning toward goal direction. Small shaping term. Recommended: 1-3",
         "time": "Time penalty per step. More negative = faster episodes. Keep tiny early on: -0.005 to -0.01",
         "smooth": "Penalty for action changes. More negative = smoother motions. Polish term: -0.01 to -0.2",
         "collision": "Penalty when colliding. More negative = stronger avoidance. Recommended: -50 to -75",
@@ -581,4 +586,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

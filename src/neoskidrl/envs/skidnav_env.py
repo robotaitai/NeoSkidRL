@@ -125,7 +125,9 @@ class NeoSkidNavEnv(gym.Env):
 
         # episode state
         self._prev_dist = None
-        self._prev_action = None
+        self._applied_action = None
+        self._prev_applied_action = None
+        self._prev_goal_angle = None
         self._stuck_counter = 0
         self._stuck_limit_steps = int(self.cfg["task"]["failure"]["stuck_sec"] / (self.dt * self.frame_skip))
 
@@ -366,7 +368,10 @@ class NeoSkidNavEnv(gym.Env):
         self.steps = 0
         base_xy, _ = self._get_base_pose()
         self._prev_dist = float(np.linalg.norm(self.goal_xy - base_xy))
-        self._prev_action = np.zeros((self.action_space.shape[0],), dtype=np.float32)
+        goal_obs = self._goal_obs()
+        self._prev_goal_angle = float(math.atan2(goal_obs[1], goal_obs[0]))
+        self._applied_action = np.zeros((self.action_space.shape[0],), dtype=np.float32)
+        self._prev_applied_action = self._applied_action.copy()
         self._stuck_counter = 0
 
         obs = self._get_obs()
@@ -382,16 +387,22 @@ class NeoSkidNavEnv(gym.Env):
     def _apply_action(self, action: np.ndarray):
         action = np.array(action, dtype=np.float32)
         action = np.clip(action, -1.0, 1.0)
+        prev_applied = (
+            self._applied_action.copy()
+            if self._applied_action is not None
+            else np.zeros((self.action_space.shape[0],), dtype=np.float32)
+        )
+        applied = action.copy()
 
         # optional rate limit
         if self.cfg["control"]["rate_limit"]["enabled"]:
             md = float(self.cfg["control"]["rate_limit"]["max_delta_per_step"])
-            action = np.clip(action, self._prev_action - md, self._prev_action + md)
-            action = np.clip(action, -1.0, 1.0)
+            applied = np.clip(applied, prev_applied - md, prev_applied + md)
+            applied = np.clip(applied, -1.0, 1.0)
 
         if self.action_space_mode == "v_w":
-            v = float(action[0]) * self.v_max
-            w = float(action[1]) * self.w_max
+            v = float(applied[0]) * self.v_max
+            w = float(applied[1]) * self.w_max
 
             v_l = v - w * (self.track / 2.0)
             v_r = v + w * (self.track / 2.0)
@@ -406,11 +417,12 @@ class NeoSkidNavEnv(gym.Env):
             self.data.ctrl[3] = w_r
 
         else:  # wheel_velocities
-            ws = action * self.wheel_vel_max
+            ws = applied * self.wheel_vel_max
             ws = np.clip(ws, -self.wheel_vel_max, self.wheel_vel_max)
             self.data.ctrl[:] = ws
 
-        self._prev_action = action
+        self._prev_applied_action = prev_applied
+        self._applied_action = applied
 
     def step(self, action):
         self._apply_action(action)
@@ -436,9 +448,13 @@ class NeoSkidNavEnv(gym.Env):
         success = bool(pos_ok and yaw_ok and stop_ok)
         
         # stuck check (compute before rewards to pass to reward function)
-        progress = float(self._prev_dist - dist if self._prev_dist is not None else 0.0)
-        min_prog = float(self.cfg["task"]["failure"]["min_progress_m"])
-        if progress < min_prog * 0.01:
+        v = float(spd_obs[0])
+        wz = float(spd_obs[1])
+        applied = self._applied_action if self._applied_action is not None else np.zeros((self.action_space.shape[0],), dtype=np.float32)
+        cmd_mag = float(np.linalg.norm(applied))
+        trying_to_move = cmd_mag > 0.2
+        not_moving = v < 0.03 and abs(wz) < 0.10
+        if trying_to_move and not_moving:
             self._stuck_counter += 1
         else:
             self._stuck_counter = 0
@@ -450,16 +466,21 @@ class NeoSkidNavEnv(gym.Env):
         min_lidar_norm = float(np.min(lidar_normalized))
         min_lidar = min_lidar_norm * self.lidar_range  # Convert back to meters
         
+        goal_obs = self._goal_obs()
+        goal_angle = float(math.atan2(goal_obs[1], goal_obs[0]))
+
         # Compute rewards with enhanced terms
         terms = compute_reward_terms(
             dist=dist,
             prev_dist=self._prev_dist,
-            action=action,
+            action=applied,
             collided=collided,
             success=success,
             stuck=stuck,
             min_lidar=min_lidar,
-            prev_action=self._prev_action,
+            prev_action=self._prev_applied_action,
+            goal_angle=goal_angle,
+            prev_goal_angle=self._prev_goal_angle,
         )
         r = aggregate_reward(terms, self.cfg)
 
@@ -477,7 +498,7 @@ class NeoSkidNavEnv(gym.Env):
             truncated = True
 
         self._prev_dist = dist
-        self._prev_action = action.copy()  # Save for next step's smoothness reward
+        self._prev_goal_angle = goal_angle
         obs = self._get_obs()
         info = {
             "dist": dist,

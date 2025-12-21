@@ -78,10 +78,11 @@ task:
 
 # RECOMMENDED WEIGHTS for "get it to learn" phase
 reward:
-  enabled_terms: ["progress", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
+  enabled_terms: ["progress", "heading", "time", "collision", "goal_bonus", "stuck"]  # Disable smooth and clearance initially
   weights:
     # Dense signal: Make progress the main driver
     progress: 15.0                # Even stronger positive for moving toward goal
+    heading: 2.0                  # Small shaping for turning toward the goal
     
     # Sparse rewards/penalties
     goal_bonus: 100.0             # VERY BIG sparse reward for success
@@ -95,6 +96,7 @@ reward:
 
 # Notes:
 # - Progress is 15 (main learning signal - VERY STRONG)
+# - Heading is 2 (small shaping to allow turning toward goal)
 # - Goal bonus is 100 (was 20) - makes agent REALLY care about success
 # - Collision is -50 (was -10) - moderate penalty (not too scary)
 # - Stuck penalty -20 to prevent freezing
@@ -110,4 +112,3 @@ reward:
 # - Reduce goal_bonus to 50-60
 # - Increase collision to -75
 # - Tighten success tolerances
-

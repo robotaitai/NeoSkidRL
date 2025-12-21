@@ -13,9 +13,20 @@ def test_reward_terms_keys_and_values():
         success=True,
     )
 
-    expected_keys = {"progress", "time", "smooth", "collision", "goal_bonus"}
+    expected_keys = {"progress", "time", "smooth", "heading", "collision", "goal_bonus"}
     assert expected_keys.issubset(set(terms.keys()))
     assert all(np.isfinite(list(terms.values())))
+
+    heading_terms = compute_reward_terms(
+        dist=1.0,
+        prev_dist=1.5,
+        action=action,
+        collided=False,
+        success=False,
+        goal_angle=0.2,
+        prev_goal_angle=0.6,
+    )
+    assert heading_terms["heading"] > 0.0
 
     cfg = {
         "reward": {

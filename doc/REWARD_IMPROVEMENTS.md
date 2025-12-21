@@ -13,6 +13,7 @@ Implemented comprehensive reward shaping improvements based on RL navigation bes
 Added new reward terms:
 - **Stuck penalty**: Penalizes robot for getting stuck
 - **Clearance reward**: Encourages maintaining safe distance from obstacles based on minimum lidar reading
+- **Heading reward**: Rewards turning toward the goal before moving forward
 
 Improved existing terms:
 - **Smoothness**: Now penalizes action *changes* (Δaction) instead of action magnitude for better control
@@ -24,7 +25,8 @@ Improved existing terms:
 
 - Integrated min lidar computation for clearance reward
 - Pass stuck flag to reward function
-- Track previous action for smoothness reward
+- Track applied vs previous applied action for smoothness reward
+- Track goal angle for heading reward
 - Proper action history management
 
 ### 3. Recommended Reward Configuration
@@ -110,6 +112,7 @@ If you prefer to modify your existing config, update the weights in `config/stat
 reward:
   weights:
     progress: 10.0      # Increase from 1.0
+    heading: 2.0        # NEW - turn toward goal
     goal_bonus: 75.0    # Increase from 20.0
     collision: -75.0    # Increase from -10.0
     stuck: -25.0        # Add new term
@@ -240,4 +243,3 @@ Based on best practices from:
 - `config/recommended_rewards.yml` - NEW recommended config
 
 All changes are backward compatible with existing configs!
-

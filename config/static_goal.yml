@@ -76,12 +76,14 @@ task:
 reward:
   enabled_terms:
   - progress
+  - heading
   - time
   - smooth
   - collision
   - goal_bonus
   weights:
     progress: 1.0
+    heading: 2.0
     time: 0.0
     smooth: -0.05
     collision: -10.0
