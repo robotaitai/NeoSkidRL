@@ -48,17 +48,25 @@ python -m neoskidrl.scripts.train --algo ppo --config config/train.yml --num-env
 
 For large runs (1000+ envs), increase system resources and expect slower per-step performance.
 
-## Live training visualization (camera + lidar)
+## Live training dashboard (Rich)
 
-This runs SAC in chunks and opens a live window for the camera and lidar after each chunk.
+`visual_train` now uses a Rich terminal dashboard by default and does not open matplotlib windows unless you ask for it.
 If you want PPO visuals later, we can add a PPO variant of the visual training script.
 
 ```bash
-pip install -e .[train,viz]
-python -m neoskidrl.scripts.visual_train --config config/static_goal.yml --total-steps 300000 --chunk-steps 20000 --rollout-steps 400
+pip install -e .[train]
+python -m neoskidrl.scripts.visual_train \
+  --config config/static_goal.yml \
+  --total-steps 300000 \
+  --chunk-steps 20000
 ```
 
 The static goal is configured in `config/static_goal.yml`.
+
+Optional flags:
+- `--viz` to enable the matplotlib rollout after each chunk.
+- `--no-eval` to disable periodic evaluation.
+- `--eval-every-steps 20000` and `--eval-episodes 10` to control eval cadence.
 
 ## Eval mode (scenarios + video)
 

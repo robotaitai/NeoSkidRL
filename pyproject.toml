@@ -20,6 +20,7 @@ train = [
   "stable-baselines3>=2.3.0",
   "tensorboard>=2.13",
   "tqdm>=4.66",
+  "rich>=13.7",
 ]
 viz = [
   "matplotlib>=3.7",

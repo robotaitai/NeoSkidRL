@@ -35,7 +35,7 @@ control:
 sensors:
   lidar:
     enabled: true
-    rays: 360
+    rays: 90
     range_m: 10.0
   cameras:
     render_camera: "track"
@@ -87,7 +87,7 @@ reward:
     
     # Sparse rewards/penalties
     goal_bonus: 100.0             # VERY BIG sparse reward for success
-    collision: -50.0              # Moderate collision penalty (not too scary)
+    collision: -5.0              # Moderate collision penalty (not too scary)
     stuck: -20.0                  # Penalty for getting stuck
     
     # Shaping rewards (DISABLED initially - enable after first successes)

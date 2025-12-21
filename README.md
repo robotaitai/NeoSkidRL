@@ -25,7 +25,7 @@ pip install -e .[train]
 python -m neoskidrl.scripts.train --algo sac --config config/train.yml --num-envs 64 --headless
 ```
 
-Visual training with periodic checkpoints and visualization:
+Visual training with periodic checkpoints and a live Rich dashboard:
 
 ```bash
 pip install -e .[train]
@@ -38,6 +38,10 @@ python -m neoskidrl.scripts.visual_train \
   --ent-coef 0.1 \
   --headless
 ```
+
+Notes:
+- Matplotlib rollouts are disabled by default. Use `--viz` to enable them.
+- Periodic eval runs by default. Disable with `--no-eval` or change `--eval-every-steps`.
 
 Each run gets a unique name like `sac_swift-falcon_20231220_143052` for easy tracking!
 
@@ -93,6 +97,8 @@ Outputs go to `runs/checkpoints`, `runs/eval`, and `runs/eval_videos` by default
 Visual training checkpoints:
 - `runs/latest.zip` is updated after every chunk and on exit.
 - `runs/checkpoints/ckpt_<steps>.zip` is saved every chunk.
+
+If training feels slow while debugging rewards, reduce lidar rays in your config (e.g., `sensors.lidar.rays: 90`).
 
 Example eval on the latest checkpoint:
 

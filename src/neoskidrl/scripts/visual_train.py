@@ -102,18 +102,31 @@ def run_training_chunks(
     learning_rate: float = 3e-4,
     ent_coef: str | float = "auto",
     target_entropy: str | float = "auto",
+    resume: str | None = None,
+    finetune_from: str | None = None,
+    reset_timesteps: bool = False,
+    eval_every_steps: int = 20000,
+    eval_episodes: int = 10,
+    eval_enabled: bool = True,
 ):
     if headless and "MUJOCO_GL" not in os.environ:
         os.environ["MUJOCO_GL"] = "egl"
 
     try:
         from stable_baselines3 import SAC
+        from stable_baselines3.common.callbacks import CallbackList
         from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("stable-baselines3 not installed. Use `pip install -e .[train]`.") from exc
 
     from neoskidrl.envs import NeoSkidNavEnv
     from neoskidrl.train.callbacks import EpisodeJSONLLogger
+    try:
+        from neoskidrl.logging.rich_dashboard import RichDashboardLogger
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("rich not installed. Use `pip install -e .[train]`.") from exc
+
+    from neoskidrl.train.callbacks_rich import SB3RichCallback
 
     print(f"\n{'='*60}")
     print(f"🚀 Starting training run: {run_name}")
@@ -130,7 +143,7 @@ def run_training_chunks(
     sac_kwargs = {
         "policy": "MlpPolicy",
         "env": train_env,
-        "verbose": 1,
+        "verbose": 0,
         "tensorboard_log": logdir,
         "learning_rate": learning_rate,
         "buffer_size": buffer_size,
@@ -153,7 +166,13 @@ def run_training_chunks(
     
     print(f"SAC entropy config: ent_coef={ent_coef}, target_entropy={target_entropy}")
     
-    model = SAC(**sac_kwargs)
+    load_path = resume or finetune_from
+    if load_path:
+        model = SAC.load(load_path, env=train_env, device=device)
+        model.tensorboard_log = logdir
+        print(f"✅ Loaded model from: {load_path}")
+    else:
+        model = SAC(**sac_kwargs)
 
     viz_env = None
     if enable_viz:
@@ -167,6 +186,18 @@ def run_training_chunks(
         seed=seed,
         verbose=1,
     )
+
+    rich_logger = RichDashboardLogger(run_name=run_name, total_steps=total_steps, chunk_steps=chunk_steps)
+    rich_callback = SB3RichCallback(
+        logger=rich_logger,
+        total_steps=total_steps,
+        chunk_steps=chunk_steps,
+        eval_every_steps=eval_every_steps,
+        eval_episodes=eval_episodes,
+        eval_enabled=eval_enabled,
+        config_path=config_path,
+    )
+    callbacks = CallbackList([episode_logger, rich_callback])
     
     print(f"\n📊 Logging:")
     print(f"  Run ID: {run_name}")
@@ -178,16 +209,18 @@ def run_training_chunks(
     steps_done = 0
     latest = Path(latest_path)
     checkpoint_dir = Path(checkpoint_dir)
+    first_learn = True
     try:
         while steps_done < total_steps:
             chunk = min(chunk_steps, total_steps - steps_done)
             model.learn(
                 total_timesteps=chunk,
-                reset_num_timesteps=False,
-                progress_bar=True,
+                reset_num_timesteps=(reset_timesteps and first_learn),
+                progress_bar=False,
                 log_interval=10,
-                callback=episode_logger,
+                callback=callbacks,
             )
+            first_learn = False
             steps_done += chunk
             _save_checkpoint(model, checkpoint_dir, latest, steps_done)
             if enable_viz and viz_env is not None:
@@ -200,6 +233,8 @@ def run_training_chunks(
         train_env.close()
         if viz_env is not None:
             viz_env.close()
+        if rich_logger is not None:
+            rich_logger.close()
 
     model.save(model_out)
     return model
@@ -219,6 +254,14 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=3e-4, help="Learning rate for SAC.")
     parser.add_argument("--ent-coef", default="auto", help="Entropy coefficient ('auto' or float, e.g. 0.1).")
     parser.add_argument("--target-entropy", default="auto", help="Target entropy ('auto' or float, e.g. -1.0).")
+    parser.add_argument("--resume", default=None, help="Path to a saved SAC .zip to resume training (same run).")
+    parser.add_argument("--finetune-from", default=None, help="Path to a saved SAC .zip to start from (new run).")
+    parser.add_argument("--reset-timesteps", action="store_true", help="Reset timestep counter (useful for finetune).")
+    parser.add_argument("--eval-every-steps", type=int, default=20000, help="Run eval every N steps.")
+    parser.add_argument("--eval-episodes", type=int, default=10, help="Number of eval episodes.")
+    parser.add_argument("--no-eval", action="store_true", help="Disable periodic evaluation.")
+    parser.add_argument("--no-viz", action="store_true", help="Disable matplotlib rollout visualization.")
+    parser.add_argument("--viz", action="store_true", help="Enable matplotlib rollout visualization.")
     parser.add_argument("--logdir", default="runs/tb")
     parser.add_argument("--model-out", default="runs/final")
     parser.add_argument("--checkpoint-dir", default="runs/checkpoints")
@@ -228,12 +271,19 @@ def main() -> None:
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
     
+    if args.run_name is None and args.resume:
+        args.run_name = Path(args.resume).stem.replace(".zip", "")
+
     # Generate run name if not provided
     if args.run_name is None:
         run_name = generate_run_name(prefix="sac")
     else:
         run_name = args.run_name
     
+    enable_viz = args.viz and not args.headless
+    if args.no_viz:
+        enable_viz = False
+
     # Update paths to include run name
     logdir = f"{args.logdir}/{run_name}"
     checkpoint_dir = f"{args.checkpoint_dir}/{run_name}"
@@ -254,13 +304,19 @@ def main() -> None:
         fps=args.fps,
         headless=args.headless,
         device=args.device,
-        enable_viz=True,
+        enable_viz=enable_viz,
         num_envs=args.num_envs,
         batch_size=args.batch_size,
         buffer_size=args.buffer_size,
         learning_rate=args.learning_rate,
         ent_coef=args.ent_coef,
         target_entropy=args.target_entropy,
+        resume=args.resume,
+        finetune_from=args.finetune_from,
+        reset_timesteps=args.reset_timesteps,
+        eval_every_steps=args.eval_every_steps,
+        eval_episodes=args.eval_episodes,
+        eval_enabled=not args.no_eval,
     )
 
 
