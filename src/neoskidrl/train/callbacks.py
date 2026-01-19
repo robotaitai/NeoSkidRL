@@ -337,3 +337,149 @@ class EpisodeJSONLLogger(BaseCallback):
                 )
             elif self._episode_idx % 10 == 0:
                 print(f"[EpisodeLogger] Logged episode {self._episode_idx}: return={ep_return:.2f}, success={success}")
+
+
+class TrajectoryLogger(BaseCallback):
+    """
+    Logs per-step trajectory data for visualization in the dashboard.
+    
+    Saves each episode as a separate JSON file with:
+    - Episode metadata (run_id, seed, episode_idx, result)
+    - Step-by-step trajectory (positions, speeds, rewards)
+    - Environment info (obstacles, goal, arena size)
+    
+    Only logs a sample of episodes to avoid excessive disk usage.
+    """
+    
+    def __init__(
+        self,
+        output_dir: str | Path,
+        run_id: str = "default",
+        seed: int = 0,
+        log_every_n_episodes: int = 10,  # Log 1 in N episodes
+        max_episodes_to_keep: int = 100,  # Keep only the most recent N episodes
+        verbose: int = 0,
+    ):
+        super().__init__(verbose=verbose)
+        self.output_dir = Path(output_dir)
+        self.run_id = run_id
+        self.seed = seed
+        self.log_every_n = log_every_n_episodes
+        self.max_episodes = max_episodes_to_keep
+        
+        self._episode_idx = 0
+        self._current_trajectory = None  # Will be list of step dicts
+        self._episode_metadata = None  # Will be dict
+        
+    def _on_training_start(self) -> None:
+        """Initialize trajectory tracking."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        n_envs = self.training_env.num_envs if isinstance(self.training_env, VecEnv) else 1
+        
+        # For simplicity, only log from env 0
+        self._current_trajectory = []
+        self._episode_metadata = {
+            "run_id": self.run_id,
+            "seed": self.seed,
+            "obstacles": [],
+            "goal_xy": [0, 0],
+            "goal_yaw": 0,
+            "arena_size": [6, 6],
+        }
+        
+    def _on_step(self) -> bool:
+        """Log trajectory step if this is a logged episode."""
+        should_log = (self._episode_idx % self.log_every_n) == 0
+        
+        if not should_log:
+            # Still need to detect episode boundaries
+            infos = self.locals.get("infos", [])
+            dones = self.locals.get("dones", [])
+            if infos and dones and dones[0]:
+                self._episode_idx += 1
+            return True
+        
+        # Get info from first environment
+        infos = self.locals.get("infos", [])
+        dones = self.locals.get("dones", [])
+        
+        if not infos:
+            return True
+            
+        info = infos[0]
+        done = dones[0] if dones else False
+        
+        # Extract step data
+        step_data = {
+            "x": float(info.get("base_xy", [0, 0])[0]),
+            "y": float(info.get("base_xy", [0, 0])[1]),
+            "yaw": float(info.get("base_yaw", 0)),
+            "speed": float(info.get("speed_v", 0)),
+            "reward": float(info.get("reward_total", 0)),
+            "dist_to_goal": float(info.get("dist", 0)),
+            "collision": bool(info.get("collision", False)),
+            "stuck": bool(info.get("stuck", False)),
+            "success": bool(info.get("success", False)),
+        }
+        
+        # Store metadata on first step of episode
+        if len(self._current_trajectory) == 0:
+            self._episode_metadata = {
+                "run_id": self.run_id,
+                "seed": self.seed,
+                "obstacles": info.get("obstacles", []),
+                "goal_xy": [float(x) for x in info.get("goal_xy", [0, 0])],
+                "goal_yaw": float(info.get("goal_yaw", 0)),
+                "arena_size": [float(x) for x in info.get("arena_size", [6, 6])],
+            }
+        
+        self._current_trajectory.append(step_data)
+        
+        # On episode end, save trajectory
+        if done:
+            self._save_trajectory(info)
+            self._current_trajectory = []
+            self._episode_idx += 1
+            self._cleanup_old_files()
+            
+        return True
+    
+    def _save_trajectory(self, final_info: dict) -> None:
+        """Save the current trajectory to a JSON file."""
+        if not self._current_trajectory:
+            return
+            
+        # Determine outcome
+        outcome = "timeout"
+        if final_info.get("success"):
+            outcome = "success"
+        elif final_info.get("collision"):
+            outcome = "collision"
+        elif final_info.get("stuck"):
+            outcome = "stuck"
+        
+        episode_data = {
+            "episode_idx": self._episode_idx,
+            "outcome": outcome,
+            "total_reward": sum(s["reward"] for s in self._current_trajectory),
+            "episode_length": len(self._current_trajectory),
+            "metadata": self._episode_metadata,
+            "trajectory": self._current_trajectory,
+            "timesteps": self.num_timesteps,
+        }
+        
+        filename = f"{self.run_id}_ep{self._episode_idx:06d}.json"
+        filepath = self.output_dir / filename
+        
+        with filepath.open("w") as f:
+            json.dump(episode_data, f)
+            
+        if self.verbose > 0:
+            print(f"[TrajectoryLogger] Saved trajectory to {filepath}")
+    
+    def _cleanup_old_files(self) -> None:
+        """Remove old trajectory files if we have too many."""
+        files = sorted(self.output_dir.glob(f"{self.run_id}_ep*.json"))
+        if len(files) > self.max_episodes:
+            for f in files[:-self.max_episodes]:
+                f.unlink()

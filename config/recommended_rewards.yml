@@ -59,8 +59,8 @@ world:
     clearance_m: 0.60
     height_m: 0.01
   obstacles:
-    max_count: 25
-    count_range: [15, 25] # reduced from 20-40 to 5-20 for easier learning
+    max_count: 45
+    count_range: [15, 35] # reduced from 20-40 to 5-20 for easier learning
     size_xy_range_m: [0.10, 1.20]
     height_m: 0.40
     cylinder_prob: 0.40

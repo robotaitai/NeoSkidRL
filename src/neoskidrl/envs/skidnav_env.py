@@ -571,6 +571,11 @@ class NeoSkidNavEnv(gym.Env):
             "base_yaw": yaw,
             "speed_v": float(spd_obs[0]),
             "speed_wz": float(spd_obs[1]),
+            # Trajectory visualization data
+            "goal_xy": self.goal_xy.copy(),
+            "goal_yaw": self.goal_yaw,
+            "obstacles": list(self._obs_aabbs),  # List of (xmin, ymin, xmax, ymax)
+            "arena_size": self.cfg["world"]["arena_m"],
         }
         return obs, float(r), terminated, truncated, info
 

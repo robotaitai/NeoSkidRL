@@ -145,7 +145,7 @@ def run_training_chunks(
         raise RuntimeError("stable-baselines3 not installed. Use `pip install -e .[train]`.") from exc
 
     from neoskidrl.envs import NeoSkidNavEnv
-    from neoskidrl.train.callbacks import EpisodeJSONLLogger
+    from neoskidrl.train.callbacks import EpisodeJSONLLogger, TrajectoryLogger
     try:
         from neoskidrl.logging.rich_dashboard import RichDashboardLogger
     except Exception as exc:  # pragma: no cover - optional dependency
@@ -222,6 +222,16 @@ def run_training_chunks(
         seed=seed,
         verbose=1,
     )
+    
+    # Setup trajectory logger for trajectory visualization
+    trajectory_logger = TrajectoryLogger(
+        output_dir="runs/trajectories",
+        run_id=run_name,
+        seed=seed,
+        log_every_n_episodes=10,  # Log 1 in 10 episodes
+        max_episodes_to_keep=100,
+        verbose=0,
+    )
 
     rich_logger = RichDashboardLogger(run_name=run_name, total_steps=total_steps, chunk_steps=chunk_steps)
     rich_callback = SB3RichCallback(
@@ -233,12 +243,13 @@ def run_training_chunks(
         eval_enabled=eval_enabled,
         config_path=config_path,
     )
-    callbacks = CallbackList([episode_logger, rich_callback])
+    callbacks = CallbackList([episode_logger, trajectory_logger, rich_callback])
     
     print(f"\n📊 Logging:")
     print(f"  Run ID: {run_name}")
     print(f"  Tensorboard: {logdir}")
     print(f"  Episodes: runs/metrics/episodes.jsonl")
+    print(f"  Trajectories: runs/trajectories/")
     print(f"  Checkpoints: {checkpoint_dir}")
     print(f"  Latest: {latest_path}\n")
 
