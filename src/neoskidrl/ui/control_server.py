@@ -148,13 +148,52 @@ async def get_training_status() -> TrainingStatus:
     """Get current training status."""
     running = state.training_process is not None and state.training_process.poll() is None
     
+    # If process exists but finished, get exit code
+    exit_code = None
+    if state.training_process is not None:
+        exit_code = state.training_process.poll()
+    
     return TrainingStatus(
         running=running,
-        pid=state.training_process.pid if running else None,
-        run_name=state.run_name if running else None,
-        start_time=state.start_time if running else None,
+        pid=state.training_process.pid if state.training_process else None,
+        run_name=state.run_name,
+        start_time=state.start_time,
         total_steps=state.training_config.total_steps if state.training_config else None,
     )
+
+
+@app.get("/api/training/output")
+async def get_training_output(lines: int = 50):
+    """Get recent output from training process."""
+    if state.training_process is None:
+        return {"output": "", "running": False, "exit_code": None}
+    
+    # Check if still running
+    exit_code = state.training_process.poll()
+    running = exit_code is None
+    
+    # Try to read output (non-blocking)
+    output_lines = []
+    if state.training_process.stdout:
+        import select
+        while True:
+            # Check if there's data to read
+            ready, _, _ = select.select([state.training_process.stdout], [], [], 0)
+            if not ready:
+                break
+            line = state.training_process.stdout.readline()
+            if not line:
+                break
+            output_lines.append(line.rstrip())
+            if len(output_lines) >= lines:
+                break
+    
+    return {
+        "output": "\n".join(output_lines[-lines:]),
+        "running": running,
+        "exit_code": exit_code,
+        "pid": state.training_process.pid,
+    }
 
 
 @app.post("/api/training/start")
@@ -180,6 +219,11 @@ async def start_training(config: TrainingConfig):
     
     # Start process
     project_root = Path(__file__).parent.parent.parent.parent
+    
+    print(f"\n🚀 Starting training...")
+    print(f"   Command: {' '.join(cmd)}")
+    print(f"   Working dir: {project_root}")
+    
     state.training_process = subprocess.Popen(
         cmd,
         cwd=project_root,
@@ -193,6 +237,10 @@ async def start_training(config: TrainingConfig):
     
     # Extract run name from output (best effort)
     state.run_name = f"training_{int(state.start_time)}"
+    
+    print(f"   PID: {state.training_process.pid}")
+    print(f"   Run name: {state.run_name}")
+    print(f"   Check progress at http://localhost:8080\n")
     
     # Start metrics watcher
     if state.metrics_watcher_task is None or state.metrics_watcher_task.done():
@@ -825,16 +873,21 @@ async def watch_metrics():
 
 def main():
     import argparse
+    import logging
     
     parser = argparse.ArgumentParser(description="NeoSkidRL Control Server")
     parser.add_argument("--port", type=int, default=8080, help="Port to serve on")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
+    parser.add_argument("--quiet", action="store_true", help="Reduce logging (hide repetitive API calls)")
     args = parser.parse_args()
     
     # Change to project root
     project_root = Path(__file__).parent.parent.parent.parent
     os.chdir(project_root)
+    
+    # Reduce uvicorn logging if quiet mode
+    log_level = "warning" if args.quiet else "info"
     
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
@@ -843,12 +896,7 @@ def main():
 ║  Dashboard:  http://{args.host}:{args.port}                         ║
 ║  API Docs:   http://{args.host}:{args.port}/docs                    ║
 ║                                                              ║
-║  Features:                                                   ║
-║    • Start/stop training from browser                        ║
-║    • Edit reward weights                                     ║
-║    • View trajectories                                       ║
-║    • Real-time metrics via WebSocket                         ║
-║                                                              ║
+║  Tip: Use --quiet to reduce log spam                         ║
 ║  Press Ctrl+C to stop                                        ║
 ╚══════════════════════════════════════════════════════════════╝
 """)
@@ -858,6 +906,7 @@ def main():
         host=args.host,
         port=args.port,
         reload=args.reload,
+        log_level=log_level,
     )
 
 
