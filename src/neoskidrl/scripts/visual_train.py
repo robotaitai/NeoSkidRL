@@ -122,6 +122,7 @@ def run_training_chunks(
     enable_viz: bool,
     num_envs: int = 1,
     vec_env: str | None = None,
+    algo: str = "sac",  # "sac" or "ppo"
     batch_size: int = 256,
     buffer_size: int = 200_000,
     learning_rate: float = 3e-4,
@@ -138,7 +139,7 @@ def run_training_chunks(
         os.environ["MUJOCO_GL"] = "egl"
 
     try:
-        from stable_baselines3 import SAC
+        from stable_baselines3 import SAC, PPO
         from stable_baselines3.common.callbacks import CallbackList
         from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecMonitor
     except Exception as exc:  # pragma: no cover - optional dependency
@@ -174,41 +175,70 @@ def run_training_chunks(
     activation_fn=th.nn.ReLU,   # optional
 )
 
-    # Build SAC model with configurable entropy
-    sac_kwargs = {
-        "policy": "MlpPolicy",
-        "env": train_env,
-        "verbose": 0,
-        "tensorboard_log": logdir,
-        "learning_rate": learning_rate,
-        "buffer_size": buffer_size,
-        "batch_size": batch_size,
-        "gamma": 0.99,
-        "train_freq": 1,
-        "gradient_steps": 1,
-        "device": device,
-        "policy_kwargs": policy_kwargs,
-    }
+    # Algorithm selection
+    algo = algo.lower()
+    algo_class = SAC if algo == "sac" else PPO
+    algo_name = algo.upper()
     
-    # Add entropy coefficient (auto or fixed value)
-    if ent_coef != "auto":
-        sac_kwargs["ent_coef"] = float(ent_coef)
-    else:
-        sac_kwargs["ent_coef"] = "auto"
-    
-    # Add target entropy if specified
-    if target_entropy != "auto":
-        sac_kwargs["target_entropy"] = float(target_entropy)
-    
-    print(f"SAC entropy config: ent_coef={ent_coef}, target_entropy={target_entropy}")
+    print(f"🧠 Algorithm: {algo_name}")
     
     load_path = resume or finetune_from
+    
+    if algo == "sac":
+        # Build SAC model with configurable entropy
+        model_kwargs = {
+            "policy": "MlpPolicy",
+            "env": train_env,
+            "verbose": 0,
+            "tensorboard_log": logdir,
+            "learning_rate": learning_rate,
+            "buffer_size": buffer_size,
+            "batch_size": batch_size,
+            "gamma": 0.99,
+            "train_freq": 1,
+            "gradient_steps": 1,
+            "device": device,
+            "policy_kwargs": policy_kwargs,
+        }
+        
+        # Add entropy coefficient (auto or fixed value)
+        if ent_coef != "auto":
+            model_kwargs["ent_coef"] = float(ent_coef)
+        else:
+            model_kwargs["ent_coef"] = "auto"
+        
+        # Add target entropy if specified
+        if target_entropy != "auto":
+            model_kwargs["target_entropy"] = float(target_entropy)
+        
+        print(f"  Entropy config: ent_coef={ent_coef}, target_entropy={target_entropy}")
+        
+    else:  # PPO
+        # Build PPO model
+        model_kwargs = {
+            "policy": "MlpPolicy",
+            "env": train_env,
+            "verbose": 0,
+            "tensorboard_log": logdir,
+            "learning_rate": learning_rate,
+            "n_steps": 2048,  # Steps per update
+            "batch_size": min(batch_size, 64),  # PPO uses smaller batches
+            "n_epochs": 10,  # Number of epochs per update
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "clip_range": 0.2,
+            "ent_coef": 0.01 if ent_coef == "auto" else float(ent_coef),
+            "device": device,
+            "policy_kwargs": policy_kwargs,
+        }
+        print(f"  PPO config: n_steps=2048, n_epochs=10, clip_range=0.2")
+    
     if load_path:
-        model = SAC.load(load_path, env=train_env, device=device)
+        model = algo_class.load(load_path, env=train_env, device=device)
         model.tensorboard_log = logdir
         print(f"✅ Loaded model from: {load_path}")
     else:
-        model = SAC(**sac_kwargs)
+        model = algo_class(**model_kwargs)
 
     viz_env = None
     if enable_viz:
@@ -218,7 +248,7 @@ def run_training_chunks(
     episode_logger = EpisodeJSONLLogger(
         output_path="runs/metrics/episodes.jsonl",
         run_id=run_name,  # Use the generated run name
-        algo="SAC",
+        algo=algo_name,
         seed=seed,
         verbose=1,
     )
@@ -288,8 +318,9 @@ def run_training_chunks(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train SAC and periodically visualize progress.")
+    parser = argparse.ArgumentParser(description="Train RL agent (SAC or PPO) and periodically visualize progress.")
     parser.add_argument("--config", default="config/default.yml", help="Path to config YAML.")
+    parser.add_argument("--algo", choices=["sac", "ppo"], default="sac", help="Algorithm: sac (off-policy) or ppo (on-policy).")
     parser.add_argument("--total-steps", type=int, default=200_000)
     parser.add_argument("--chunk-steps", type=int, default=10_000, help="Steps per chunk (default: 10k for more frequent checkpoints)")
     parser.add_argument("--rollout-steps", type=int, default=400)
@@ -360,6 +391,7 @@ def main() -> None:
         enable_viz=enable_viz,
         num_envs=args.num_envs,
         vec_env=args.vec_env,
+        algo=args.algo,
         batch_size=args.batch_size,
         buffer_size=args.buffer_size,
         learning_rate=args.learning_rate,

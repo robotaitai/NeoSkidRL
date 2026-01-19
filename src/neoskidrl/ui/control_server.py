@@ -48,6 +48,7 @@ except ImportError:
 class TrainingConfig(BaseModel):
     """Training configuration from UI."""
     config_path: str = "config/recommended_rewards.yml"
+    algo: str = "sac"  # "sac" or "ppo"
     total_steps: int = 100000
     num_envs: int = 4
     batch_size: int = 256
@@ -167,6 +168,7 @@ async def start_training(config: TrainingConfig):
     cmd = [
         sys.executable, "-m", "neoskidrl.scripts.visual_train",
         "--config", config.config_path,
+        "--algo", config.algo,
         "--total-steps", str(config.total_steps),
         "--num-envs", str(config.num_envs),
         "--batch-size", str(config.batch_size),

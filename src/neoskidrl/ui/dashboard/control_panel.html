@@ -499,6 +499,14 @@
                         </div>
                         
                         <div class="form-group">
+                            <label class="form-label">Algorithm</label>
+                            <select class="form-select" id="algo-select">
+                                <option value="sac">SAC (Soft Actor-Critic) - Off-policy, sample efficient</option>
+                                <option value="ppo">PPO (Proximal Policy Optimization) - On-policy, stable</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
                             <label class="form-label">Total Steps</label>
                             <input type="number" class="form-input" id="total-steps" value="100000" step="10000">
                         </div>
@@ -816,6 +824,7 @@
         async function startTraining() {
             const config = {
                 config_path: document.getElementById('config-select').value,
+                algo: document.getElementById('algo-select').value,
                 total_steps: parseInt(document.getElementById('total-steps').value),
                 num_envs: parseInt(document.getElementById('num-envs').value),
                 batch_size: parseInt(document.getElementById('batch-size').value),
