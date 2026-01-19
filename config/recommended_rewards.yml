@@ -57,7 +57,7 @@ world:
     pos_m: [2.0, 0.0]
     yaw_deg: 0.0
     clearance_m: 0.60
-    height_m: 0.01
+    height_m: 0.15  # Raised for visibility
   obstacles:
     max_count: 45
     count_range: [15, 35] # reduced from 20-40 to 5-20 for easier learning

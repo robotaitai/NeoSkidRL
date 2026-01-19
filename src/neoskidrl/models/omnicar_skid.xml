@@ -36,7 +36,8 @@
       <camera name="bev" mode="trackcom" pos="0 0 5" xyaxes="1 0 0 0 1 0"/>
     </body>
 
-    <site name="goal" pos="2 0 0.01" size="0.06" rgba="0 0.9 0 0.5"/>
+    <!-- Goal marker: bright green cylinder, clearly visible -->
+    <site name="goal" type="cylinder" pos="2 0 0.15" size="0.25 0.3" rgba="0.1 0.95 0.3 0.9"/>
 
     <!-- Kinematic obstacles (mocap bodies). We'll move/resize them from Python. -->
     <!-- Default placed far away. -->

@@ -582,9 +582,10 @@
                 </div>
                 
                 <!-- Training Progress -->
-                <div class="card" id="progress-card" style="display: none;">
+                <div class="card" id="progress-card" style="margin-bottom: 1.5rem;">
                     <div class="card-header">
-                        <h3 class="card-title">📊 Progress</h3>
+                        <h3 class="card-title">📊 Training Progress</h3>
+                        <button class="btn btn-secondary" id="refresh-progress" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;">🔄</button>
                     </div>
                     <div class="card-body">
                         <div class="progress-bar">
@@ -597,22 +598,32 @@
                         
                         <div class="metrics-grid" style="margin-top: 1rem;">
                             <div class="metric-card success">
-                                <div class="metric-value" id="metric-success">0%</div>
-                                <div class="metric-label">Success Rate</div>
+                                <div class="metric-value" id="metric-success">-</div>
+                                <div class="metric-label">Success %</div>
                             </div>
                             <div class="metric-card danger">
-                                <div class="metric-value" id="metric-collision">0%</div>
-                                <div class="metric-label">Collision Rate</div>
+                                <div class="metric-value" id="metric-collision">-</div>
+                                <div class="metric-label">Collision %</div>
                             </div>
                             <div class="metric-card">
-                                <div class="metric-value" id="metric-return">0</div>
+                                <div class="metric-value" id="metric-return">-</div>
                                 <div class="metric-label">Avg Return</div>
                             </div>
                             <div class="metric-card">
-                                <div class="metric-value" id="metric-episodes">0</div>
+                                <div class="metric-value" id="metric-episodes">-</div>
                                 <div class="metric-label">Episodes</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- GPU Status -->
+                <div class="card" id="gpu-card">
+                    <div class="card-header">
+                        <h3 class="card-title">🖥️ GPU Status</h3>
+                    </div>
+                    <div class="card-body" id="gpu-status">
+                        <div style="color: var(--text-muted); font-size: 0.85rem;">Loading...</div>
                     </div>
                 </div>
             </div>
@@ -1416,6 +1427,81 @@
         });
         
         // ==================================================================
+        // GPU and Progress Monitoring
+        // ==================================================================
+        
+        async function loadGpuStatus() {
+            try {
+                const response = await fetch('/api/system/gpu');
+                const data = await response.json();
+                
+                const container = document.getElementById('gpu-status');
+                
+                if (!data.available) {
+                    container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem;">GPU not available: ${data.error || 'Unknown'}</div>`;
+                    return;
+                }
+                
+                container.innerHTML = data.gpus.map(gpu => `
+                    <div style="margin-bottom: 0.5rem;">
+                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.25rem;">${gpu.name}</div>
+                        <div style="display: flex; gap: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                            <span style="color: ${gpu.utilization > 80 ? 'var(--accent-success)' : 'var(--text-muted)'};">
+                                🔥 ${gpu.utilization}%
+                            </span>
+                            <span style="color: var(--text-secondary);">
+                                💾 ${gpu.memory_used_mb}/${gpu.memory_total_mb} MB
+                            </span>
+                            <span style="color: ${gpu.temperature_c > 75 ? 'var(--accent-danger)' : 'var(--text-muted)'};">
+                                🌡️ ${gpu.temperature_c}°C
+                            </span>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                document.getElementById('gpu-status').innerHTML = 
+                    '<div style="color: var(--text-muted); font-size: 0.85rem;">Could not fetch GPU status</div>';
+            }
+        }
+        
+        async function loadProgress() {
+            try {
+                const response = await fetch('/api/training/progress');
+                const data = await response.json();
+                
+                const totalSteps = parseInt(document.getElementById('total-steps').value) || 100000;
+                const currentSteps = data.total_timesteps || 0;
+                const percent = Math.min(100, (currentSteps / totalSteps) * 100);
+                
+                document.getElementById('progress-fill').style.width = `${percent}%`;
+                document.getElementById('progress-steps').textContent = 
+                    `${currentSteps.toLocaleString()} / ${totalSteps.toLocaleString()}`;
+                document.getElementById('progress-percent').textContent = `${percent.toFixed(1)}%`;
+                
+                document.getElementById('metric-success').textContent = 
+                    data.recent_success_rate ? `${data.recent_success_rate.toFixed(1)}%` : '-';
+                document.getElementById('metric-collision').textContent = 
+                    data.recent_collision_rate ? `${data.recent_collision_rate.toFixed(1)}%` : '-';
+                document.getElementById('metric-return').textContent = 
+                    data.recent_avg_return ? data.recent_avg_return.toFixed(1) : '-';
+                document.getElementById('metric-episodes').textContent = 
+                    data.total_episodes || '-';
+                
+            } catch (error) {
+                console.log('Could not fetch progress');
+            }
+        }
+        
+        // Auto-refresh progress and GPU every 3 seconds
+        setInterval(() => {
+            loadProgress();
+            loadGpuStatus();
+        }, 3000);
+        
+        document.getElementById('refresh-progress').addEventListener('click', loadProgress);
+        
+        // ==================================================================
         // Initialize
         // ==================================================================
         
@@ -1425,6 +1511,8 @@
             loadTrajectories();
             loadModels();
             loadVideos();
+            loadProgress();
+            loadGpuStatus();
             renderTrajectory();
             
             // Handle window resize

@@ -205,10 +205,27 @@ async def start_training(config: TrainingConfig):
 @app.post("/api/training/stop")
 async def stop_training():
     """Stop the current training run."""
-    if state.training_process is None or state.training_process.poll() is not None:
-        raise HTTPException(status_code=400, detail="No training running")
+    # Check if process exists
+    if state.training_process is None:
+        # Reset state anyway
+        state.training_config = None
+        state.run_name = None
+        state.start_time = None
+        return {"status": "no_process", "message": "No training process tracked"}
+    
+    # Check if already finished
+    poll_result = state.training_process.poll()
+    if poll_result is not None:
+        # Process already finished
+        pid = state.training_process.pid
+        state.training_process = None
+        state.training_config = None
+        state.run_name = None
+        state.start_time = None
+        return {"status": "already_finished", "pid": pid, "exit_code": poll_result}
     
     # Send SIGTERM
+    pid = state.training_process.pid
     state.training_process.terminate()
     
     # Wait up to 5 seconds
@@ -216,8 +233,8 @@ async def stop_training():
         state.training_process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         state.training_process.kill()
+        state.training_process.wait(timeout=2)
     
-    pid = state.training_process.pid
     state.training_process = None
     state.training_config = None
     state.run_name = None
@@ -248,6 +265,91 @@ async def get_training_logs(lines: int = 100):
             continue
     
     return {"logs": logs}
+
+
+@app.get("/api/system/gpu")
+async def get_gpu_status():
+    """Get GPU utilization using nvidia-smi."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name",
+             "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        
+        if result.returncode != 0:
+            return {"available": False, "error": "nvidia-smi failed"}
+        
+        lines = result.stdout.strip().split('\n')
+        gpus = []
+        for i, line in enumerate(lines):
+            parts = [p.strip() for p in line.split(',')]
+            if len(parts) >= 5:
+                gpus.append({
+                    "index": i,
+                    "name": parts[4],
+                    "utilization": int(parts[0]),
+                    "memory_used_mb": int(parts[1]),
+                    "memory_total_mb": int(parts[2]),
+                    "temperature_c": int(parts[3]),
+                })
+        
+        return {"available": True, "gpus": gpus}
+        
+    except FileNotFoundError:
+        return {"available": False, "error": "nvidia-smi not found"}
+    except Exception as e:
+        return {"available": False, "error": str(e)}
+
+
+@app.get("/api/training/progress")
+async def get_training_progress():
+    """Get detailed training progress from episode logs."""
+    log_path = Path("runs/metrics/episodes.jsonl")
+    if not log_path.exists():
+        return {
+            "total_episodes": 0,
+            "total_timesteps": 0,
+            "recent_success_rate": 0,
+            "recent_collision_rate": 0,
+            "recent_avg_return": 0,
+            "recent_avg_length": 0,
+        }
+    
+    # Read all episodes
+    episodes = []
+    with log_path.open() as f:
+        for line in f:
+            try:
+                episodes.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    
+    if not episodes:
+        return {
+            "total_episodes": 0,
+            "total_timesteps": 0,
+            "recent_success_rate": 0,
+            "recent_collision_rate": 0,
+            "recent_avg_return": 0,
+            "recent_avg_length": 0,
+        }
+    
+    # Recent = last 100 episodes
+    recent = episodes[-100:]
+    
+    return {
+        "total_episodes": len(episodes),
+        "total_timesteps": episodes[-1].get("timesteps", 0) if episodes else 0,
+        "recent_success_rate": sum(1 for e in recent if e.get("success")) / len(recent) * 100,
+        "recent_collision_rate": sum(1 for e in recent if e.get("collision")) / len(recent) * 100,
+        "recent_stuck_rate": sum(1 for e in recent if e.get("stuck")) / len(recent) * 100,
+        "recent_avg_return": sum(e.get("ep_return", 0) for e in recent) / len(recent),
+        "recent_avg_length": sum(e.get("ep_len", 0) for e in recent) / len(recent),
+        "latest_episode": recent[-1] if recent else None,
+    }
 
 
 # ==============================================================================
