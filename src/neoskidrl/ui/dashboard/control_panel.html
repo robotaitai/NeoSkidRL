@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeoSkidRL Control Panel</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-primary: #0a0a0b;
+            --bg-secondary: #111113;
+            --bg-card: #18181b;
+            --bg-card-hover: #1f1f23;
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --accent-primary: #6366f1;
+            --accent-secondary: #8b5cf6;
+            --accent-success: #22c55e;
+            --accent-danger: #ef4444;
+            --accent-warning: #f59e0b;
+            --border-color: #27272a;
+            --gradient-primary: linear-gradient(135deg, #6366f1, #8b5cf6);
+            --gradient-success: linear-gradient(135deg, #22c55e, #10b981);
+            --gradient-danger: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        .bg-gradient {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                var(--bg-primary);
+            z-index: -1;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .logo-icon {
+            width: 42px;
+            height: 42px;
+            background: var(--gradient-primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        
+        .logo span { color: var(--accent-primary); }
+        
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+        
+        .status-dot.connected { background: var(--accent-success); }
+        .status-dot.running { background: var(--accent-warning); animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Main Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 320px 1fr 350px;
+            gap: 1.5rem;
+            min-height: calc(100vh - 120px);
+        }
+        
+        @media (max-width: 1200px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+        
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+        
+        .card-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .card-body { padding: 1.25rem; }
+        
+        /* Forms */
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-group:last-child { margin-bottom: 0; }
+        
+        .form-label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 0.4rem;
+        }
+        
+        .form-input, .form-select {
+            width: 100%;
+            padding: 0.6rem 0.8rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+        
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        
+        .form-input::placeholder { color: var(--text-muted); }
+        
+        /* Buttons */
+        .btn {
+            padding: 0.7rem 1.25rem;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -10px rgba(99, 102, 241, 0.5);
+        }
+        
+        .btn-success {
+            background: var(--gradient-success);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: var(--gradient-danger);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-secondary:hover {
+            background: var(--bg-card-hover);
+        }
+        
+        .btn-block { width: 100%; }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        /* Reward Editor */
+        .reward-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .reward-item:last-child { margin-bottom: 0; }
+        
+        .reward-icon {
+            font-size: 1.25rem;
+            width: 32px;
+            text-align: center;
+        }
+        
+        .reward-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .reward-name {
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        
+        .reward-desc {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .reward-value {
+            width: 70px;
+        }
+        
+        .reward-input {
+            width: 100%;
+            padding: 0.4rem 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            text-align: right;
+        }
+        
+        .reward-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        
+        .reward-input.positive { color: var(--accent-success); }
+        .reward-input.negative { color: var(--accent-danger); }
+        
+        /* Metrics Panel */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .metric-card {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 0.75rem;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .metric-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .metric-card.success .metric-value { color: var(--accent-success); }
+        .metric-card.danger .metric-value { color: var(--accent-danger); }
+        .metric-card.warning .metric-value { color: var(--accent-warning); }
+        
+        /* Training Progress */
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--gradient-primary);
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        
+        /* Log Console */
+        .console {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            height: 200px;
+            overflow-y: auto;
+        }
+        
+        .console-line {
+            margin-bottom: 0.25rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .console-time {
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        
+        .console-msg { color: var(--text-secondary); }
+        .console-msg.success { color: var(--accent-success); }
+        .console-msg.error { color: var(--accent-danger); }
+        
+        /* Trajectory Canvas */
+        .trajectory-container {
+            position: relative;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        #trajectoryCanvas {
+            width: 100%;
+            height: 300px;
+            display: block;
+        }
+        
+        .trajectory-controls {
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .trajectory-select {
+            flex: 1;
+        }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+        }
+        
+        .tab {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .tab:hover { color: var(--text-primary); }
+        .tab.active {
+            background: var(--accent-primary);
+            color: white;
+        }
+        
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 1000;
+        }
+        
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .toast.success { border-left: 3px solid var(--accent-success); }
+        .toast.error { border-left: 3px solid var(--accent-danger); }
+        .toast.info { border-left: 3px solid var(--accent-primary); }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🚗</div>
+                <h1>Neo<span>Skid</span>RL</h1>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot" id="ws-status"></div>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </header>
+        
+        <div class="main-grid">
+            <!-- Left Panel: Training Control -->
+            <div class="left-panel">
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h3 class="card-title">🎮 Training Control</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="form-label">Config File</label>
+                            <select class="form-select" id="config-select">
+                                <option value="config/recommended_rewards.yml">recommended_rewards.yml</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Total Steps</label>
+                            <input type="number" class="form-input" id="total-steps" value="100000" step="10000">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Parallel Environments</label>
+                            <input type="number" class="form-input" id="num-envs" value="4" min="1" max="32">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Batch Size</label>
+                            <input type="number" class="form-input" id="batch-size" value="256" step="64">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Eval Every (steps)</label>
+                            <input type="number" class="form-input" id="eval-every" value="10000" step="5000">
+                        </div>
+                        
+                        <div class="btn-group" style="margin-top: 1rem;">
+                            <button class="btn btn-success btn-block" id="start-btn">
+                                ▶ Start Training
+                            </button>
+                            <button class="btn btn-danger" id="stop-btn" disabled>
+                                ⏹ Stop
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Training Progress -->
+                <div class="card" id="progress-card" style="display: none;">
+                    <div class="card-header">
+                        <h3 class="card-title">📊 Progress</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progress-steps">0 / 100,000</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        
+                        <div class="metrics-grid" style="margin-top: 1rem;">
+                            <div class="metric-card success">
+                                <div class="metric-value" id="metric-success">0%</div>
+                                <div class="metric-label">Success Rate</div>
+                            </div>
+                            <div class="metric-card danger">
+                                <div class="metric-value" id="metric-collision">0%</div>
+                                <div class="metric-label">Collision Rate</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="metric-return">0</div>
+                                <div class="metric-label">Avg Return</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value" id="metric-episodes">0</div>
+                                <div class="metric-label">Episodes</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Center Panel: Visualization -->
+            <div class="center-panel">
+                <div class="card" style="height: 100%;">
+                    <div class="card-header">
+                        <h3 class="card-title">🗺️ Trajectory Viewer</h3>
+                        <div class="tabs">
+                            <button class="tab active" data-tab="trajectory">Trajectory</button>
+                            <button class="tab" data-tab="console">Console</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Trajectory Tab -->
+                        <div id="tab-trajectory">
+                            <div class="trajectory-container">
+                                <canvas id="trajectoryCanvas"></canvas>
+                            </div>
+                            <div class="trajectory-controls" style="margin-top: 0.75rem;">
+                                <select class="form-select trajectory-select" id="trajectory-select">
+                                    <option value="">Select trajectory...</option>
+                                </select>
+                                <button class="btn btn-secondary" id="refresh-trajectories">🔄</button>
+                                <button class="btn btn-secondary" id="play-btn">▶</button>
+                                <button class="btn btn-secondary" id="reset-btn">↺</button>
+                            </div>
+                            
+                            <!-- Stats -->
+                            <div class="metrics-grid" style="margin-top: 1rem;">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="traj-outcome">-</div>
+                                    <div class="metric-label">Outcome</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-value" id="traj-reward">-</div>
+                                    <div class="metric-label">Reward</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-value" id="traj-length">-</div>
+                                    <div class="metric-label">Steps</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-value" id="traj-speed">-</div>
+                                    <div class="metric-label">Max Speed</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Console Tab -->
+                        <div id="tab-console" style="display: none;">
+                            <div class="console" id="console">
+                                <div class="console-line">
+                                    <span class="console-time">--:--:--</span>
+                                    <span class="console-msg">Waiting for training to start...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Panel: Reward Editor -->
+            <div class="right-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">⚖️ Reward Weights</h3>
+                        <button class="btn btn-secondary" id="save-rewards-btn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;">
+                            💾 Save
+                        </button>
+                    </div>
+                    <div class="card-body" id="reward-editor">
+                        <!-- Reward items will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <script>
+        // ==================================================================
+        // Configuration
+        // ==================================================================
+        
+        const REWARDS = [
+            { key: "progress", name: "Progress", icon: "🎯", desc: "Move toward goal", default: 15.0 },
+            { key: "goal_bonus", name: "Goal Bonus", icon: "🏆", desc: "Reach the goal", default: 100.0 },
+            { key: "heading", name: "Heading", icon: "🧭", desc: "Face the goal", default: 2.0 },
+            { key: "velocity", name: "Velocity", icon: "💨", desc: "Move forward", default: 0.4 },
+            { key: "time", name: "Time", icon: "⏱️", desc: "Step penalty", default: -0.005 },
+            { key: "collision", name: "Collision", icon: "💥", desc: "Hit obstacle", default: -50.0 },
+            { key: "stuck", name: "Stuck", icon: "🚫", desc: "Can't move", default: -20.0 },
+            { key: "near_goal_speed", name: "Near Goal", icon: "🛑", desc: "Slow near goal", default: -1.0 },
+            { key: "clearance", name: "Clearance", icon: "📏", desc: "Near obstacles", default: 0.0 },
+            { key: "smooth", name: "Smooth", icon: "〰️", desc: "Jerky actions", default: 0.0 },
+        ];
+        
+        // ==================================================================
+        // State
+        // ==================================================================
+        
+        let ws = null;
+        let rewardWeights = {};
+        let isTraining = false;
+        let recentEpisodes = [];
+        let trajectoryData = null;
+        let trajectoryStep = 0;
+        let isPlaying = false;
+        
+        // ==================================================================
+        // WebSocket
+        // ==================================================================
+        
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                document.getElementById('ws-status').className = 'status-dot connected';
+                document.getElementById('status-text').textContent = 'Connected';
+                showToast('Connected to server', 'success');
+            };
+            
+            ws.onclose = () => {
+                document.getElementById('ws-status').className = 'status-dot';
+                document.getElementById('status-text').textContent = 'Disconnected';
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onerror = () => {
+                showToast('Connection error', 'error');
+            };
+            
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            };
+        }
+        
+        function handleMessage(msg) {
+            switch (msg.type) {
+                case 'status':
+                    updateTrainingStatus(msg.data);
+                    break;
+                case 'episode':
+                    handleNewEpisode(msg.data);
+                    break;
+                case 'training_started':
+                    isTraining = true;
+                    updateUIForTraining(true);
+                    showToast('Training started!', 'success');
+                    break;
+                case 'training_stopped':
+                    isTraining = false;
+                    updateUIForTraining(false);
+                    showToast('Training stopped', 'info');
+                    break;
+                case 'config_saved':
+                    showToast('Rewards saved!', 'success');
+                    break;
+            }
+        }
+        
+        // ==================================================================
+        // API Calls
+        // ==================================================================
+        
+        async function startTraining() {
+            const config = {
+                config_path: document.getElementById('config-select').value,
+                total_steps: parseInt(document.getElementById('total-steps').value),
+                num_envs: parseInt(document.getElementById('num-envs').value),
+                batch_size: parseInt(document.getElementById('batch-size').value),
+                eval_every_steps: parseInt(document.getElementById('eval-every').value),
+                seed: Math.floor(Math.random() * 1000),
+            };
+            
+            try {
+                const response = await fetch('/api/training/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config),
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail);
+                }
+                
+                const result = await response.json();
+                console.log('Training started:', result);
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function stopTraining() {
+            try {
+                await fetch('/api/training/stop', { method: 'POST' });
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function loadConfigs() {
+            try {
+                const response = await fetch('/api/configs');
+                const data = await response.json();
+                
+                const select = document.getElementById('config-select');
+                select.innerHTML = data.configs.map(c => 
+                    `<option value="${c.path}">${c.name}.yml</option>`
+                ).join('');
+                
+                // Load first config's rewards
+                if (data.configs.length > 0) {
+                    loadRewardWeights(data.configs[0].name);
+                }
+            } catch (error) {
+                console.error('Failed to load configs:', error);
+            }
+        }
+        
+        async function loadRewardWeights(configName) {
+            try {
+                const response = await fetch(`/api/config/${configName}`);
+                const data = await response.json();
+                
+                const weights = data.config?.reward?.weights || {};
+                rewardWeights = weights;
+                renderRewardEditor();
+            } catch (error) {
+                console.error('Failed to load rewards:', error);
+            }
+        }
+        
+        async function saveRewardWeights() {
+            const configPath = document.getElementById('config-select').value;
+            
+            // Collect weights from inputs
+            const weights = {};
+            REWARDS.forEach(r => {
+                const input = document.getElementById(`reward-${r.key}`);
+                if (input) {
+                    weights[r.key] = parseFloat(input.value) || 0;
+                }
+            });
+            
+            try {
+                const response = await fetch('/api/config/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config_path: configPath, weights }),
+                });
+                
+                if (!response.ok) throw new Error('Save failed');
+                showToast('Rewards saved!', 'success');
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function loadTrajectories() {
+            try {
+                const response = await fetch('/api/trajectories');
+                const data = await response.json();
+                
+                const select = document.getElementById('trajectory-select');
+                select.innerHTML = '<option value="">Select trajectory...</option>';
+                
+                // Group by run_id
+                const grouped = {};
+                for (const t of data.trajectories) {
+                    if (!grouped[t.run_id]) grouped[t.run_id] = [];
+                    grouped[t.run_id].push(t);
+                }
+                
+                for (const [runId, items] of Object.entries(grouped)) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = runId;
+                    
+                    for (const t of items.slice(0, 10)) {
+                        const option = document.createElement('option');
+                        option.value = t.filename;
+                        const emoji = { success: '✅', collision: '💥', stuck: '🚫', timeout: '⏱️' }[t.outcome] || '❓';
+                        option.textContent = `${emoji} Ep ${t.episode_idx} | R: ${t.total_reward.toFixed(1)}`;
+                        optgroup.appendChild(option);
+                    }
+                    
+                    select.appendChild(optgroup);
+                }
+            } catch (error) {
+                console.log('Could not load trajectories');
+            }
+        }
+        
+        async function loadTrajectory(filename) {
+            try {
+                const response = await fetch(`/api/trajectory/${filename}`);
+                trajectoryData = await response.json();
+                trajectoryStep = 0;
+                updateTrajectoryStats();
+                renderTrajectory();
+            } catch (error) {
+                console.error('Failed to load trajectory:', error);
+            }
+        }
+        
+        // ==================================================================
+        // UI Updates
+        // ==================================================================
+        
+        function updateTrainingStatus(status) {
+            isTraining = status.running;
+            updateUIForTraining(status.running);
+            
+            if (status.running) {
+                document.getElementById('ws-status').className = 'status-dot running';
+                document.getElementById('status-text').textContent = 'Training...';
+            }
+        }
+        
+        function updateUIForTraining(running) {
+            document.getElementById('start-btn').disabled = running;
+            document.getElementById('stop-btn').disabled = !running;
+            document.getElementById('progress-card').style.display = running ? 'block' : 'none';
+            
+            // Disable config changes while training
+            document.getElementById('config-select').disabled = running;
+            document.getElementById('total-steps').disabled = running;
+            document.getElementById('num-envs').disabled = running;
+            document.getElementById('batch-size').disabled = running;
+            document.getElementById('eval-every').disabled = running;
+        }
+        
+        function handleNewEpisode(episode) {
+            recentEpisodes.push(episode);
+            if (recentEpisodes.length > 100) recentEpisodes.shift();
+            
+            // Update metrics
+            const successRate = recentEpisodes.filter(e => e.success).length / recentEpisodes.length * 100;
+            const collisionRate = recentEpisodes.filter(e => e.collision).length / recentEpisodes.length * 100;
+            const avgReturn = recentEpisodes.reduce((a, e) => a + e.ep_return, 0) / recentEpisodes.length;
+            
+            document.getElementById('metric-success').textContent = `${successRate.toFixed(1)}%`;
+            document.getElementById('metric-collision').textContent = `${collisionRate.toFixed(1)}%`;
+            document.getElementById('metric-return').textContent = avgReturn.toFixed(1);
+            document.getElementById('metric-episodes').textContent = recentEpisodes.length;
+            
+            // Update progress
+            const totalSteps = parseInt(document.getElementById('total-steps').value);
+            const currentSteps = episode.timesteps || 0;
+            const percent = Math.min(100, (currentSteps / totalSteps) * 100);
+            
+            document.getElementById('progress-fill').style.width = `${percent}%`;
+            document.getElementById('progress-steps').textContent = `${currentSteps.toLocaleString()} / ${totalSteps.toLocaleString()}`;
+            document.getElementById('progress-percent').textContent = `${percent.toFixed(1)}%`;
+            
+            // Add to console
+            addConsoleMessage(
+                `Ep ${episode.episode_idx}: return=${episode.ep_return.toFixed(1)}, ` +
+                `${episode.success ? '✅ success' : episode.collision ? '💥 collision' : episode.stuck ? '🚫 stuck' : '⏱️ timeout'}`,
+                episode.success ? 'success' : 'error'
+            );
+        }
+        
+        function renderRewardEditor() {
+            const container = document.getElementById('reward-editor');
+            container.innerHTML = REWARDS.map(r => {
+                const value = rewardWeights[r.key] ?? r.default;
+                const isPositive = value >= 0;
+                return `
+                    <div class="reward-item">
+                        <div class="reward-icon">${r.icon}</div>
+                        <div class="reward-info">
+                            <div class="reward-name">${r.name}</div>
+                            <div class="reward-desc">${r.desc}</div>
+                        </div>
+                        <div class="reward-value">
+                            <input type="number" 
+                                   class="reward-input ${isPositive ? 'positive' : 'negative'}"
+                                   id="reward-${r.key}"
+                                   value="${value}"
+                                   step="0.1"
+                                   onchange="updateRewardColor(this)">
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function updateRewardColor(input) {
+            const value = parseFloat(input.value);
+            input.classList.remove('positive', 'negative');
+            input.classList.add(value >= 0 ? 'positive' : 'negative');
+        }
+        
+        function addConsoleMessage(msg, type = '') {
+            const console = document.getElementById('console');
+            const time = new Date().toLocaleTimeString();
+            const line = document.createElement('div');
+            line.className = 'console-line';
+            line.innerHTML = `
+                <span class="console-time">${time}</span>
+                <span class="console-msg ${type}">${msg}</span>
+            `;
+            console.appendChild(line);
+            console.scrollTop = console.scrollHeight;
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span>${{success: '✅', error: '❌', info: 'ℹ️'}[type] || 'ℹ️'}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // ==================================================================
+        // Trajectory Rendering
+        // ==================================================================
+        
+        function renderTrajectory() {
+            const canvas = document.getElementById('trajectoryCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = 300;
+            
+            const w = canvas.width;
+            const h = canvas.height;
+            
+            // Background
+            ctx.fillStyle = '#111113';
+            ctx.fillRect(0, 0, w, h);
+            
+            if (!trajectoryData) {
+                ctx.fillStyle = '#71717a';
+                ctx.font = '14px Space Grotesk';
+                ctx.textAlign = 'center';
+                ctx.fillText('Select a trajectory to visualize', w/2, h/2);
+                return;
+            }
+            
+            const traj = trajectoryData.trajectory;
+            const meta = trajectoryData.metadata;
+            const arena = meta.arena_size || [6, 6];
+            
+            // Coordinate transform
+            const padding = 30;
+            const scale = Math.min((w - padding*2) / arena[0], (h - padding*2) / arena[1]);
+            const cx = w / 2;
+            const cy = h / 2;
+            
+            const toCanvas = (x, y) => ({
+                x: cx + x * scale,
+                y: cy - y * scale
+            });
+            
+            // Grid
+            ctx.strokeStyle = '#1f1f23';
+            ctx.lineWidth = 1;
+            for (let i = -Math.floor(arena[0]/2); i <= Math.floor(arena[0]/2); i++) {
+                const p = toCanvas(i, 0);
+                ctx.beginPath();
+                ctx.moveTo(p.x, padding);
+                ctx.lineTo(p.x, h - padding);
+                ctx.stroke();
+            }
+            
+            // Obstacles
+            ctx.fillStyle = '#3f3f46';
+            for (const [xmin, ymin, xmax, ymax] of (meta.obstacles || [])) {
+                const p1 = toCanvas(xmin, ymax);
+                const p2 = toCanvas(xmax, ymin);
+                ctx.fillRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
+            }
+            
+            // Goal
+            const goal = toCanvas(meta.goal_xy[0], meta.goal_xy[1]);
+            ctx.fillStyle = '#22c55e';
+            ctx.beginPath();
+            ctx.arc(goal.x, goal.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Trajectory
+            const maxSpeed = Math.max(...traj.map(s => s.speed), 0.1);
+            for (let i = 1; i <= trajectoryStep && i < traj.length; i++) {
+                const prev = traj[i-1];
+                const curr = traj[i];
+                const p1 = toCanvas(prev.x, prev.y);
+                const p2 = toCanvas(curr.x, curr.y);
+                
+                const speedRatio = curr.speed / maxSpeed;
+                ctx.strokeStyle = `hsl(${260 - speedRatio * 60}, 70%, 60%)`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+            }
+            
+            // Current position
+            if (trajectoryStep < traj.length) {
+                const curr = traj[trajectoryStep];
+                const p = toCanvas(curr.x, curr.y);
+                
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(-curr.yaw);
+                
+                ctx.fillStyle = '#6366f1';
+                ctx.beginPath();
+                ctx.moveTo(12, 0);
+                ctx.lineTo(-8, 6);
+                ctx.lineTo(-8, -6);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+        
+        function updateTrajectoryStats() {
+            if (!trajectoryData) return;
+            
+            document.getElementById('traj-outcome').textContent = 
+                trajectoryData.outcome.charAt(0).toUpperCase() + trajectoryData.outcome.slice(1);
+            document.getElementById('traj-reward').textContent = 
+                trajectoryData.total_reward.toFixed(1);
+            document.getElementById('traj-length').textContent = 
+                trajectoryData.episode_length;
+            document.getElementById('traj-speed').textContent = 
+                Math.max(...trajectoryData.trajectory.map(s => s.speed)).toFixed(2);
+        }
+        
+        function playTrajectory() {
+            if (!trajectoryData) return;
+            
+            isPlaying = !isPlaying;
+            document.getElementById('play-btn').textContent = isPlaying ? '⏸' : '▶';
+            
+            if (isPlaying) {
+                function animate() {
+                    if (!isPlaying) return;
+                    trajectoryStep++;
+                    if (trajectoryStep >= trajectoryData.trajectory.length) {
+                        trajectoryStep = 0;
+                    }
+                    renderTrajectory();
+                    setTimeout(animate, 50);
+                }
+                animate();
+            }
+        }
+        
+        function resetTrajectory() {
+            isPlaying = false;
+            document.getElementById('play-btn').textContent = '▶';
+            trajectoryStep = 0;
+            renderTrajectory();
+        }
+        
+        // ==================================================================
+        // Event Listeners
+        // ==================================================================
+        
+        document.getElementById('start-btn').addEventListener('click', startTraining);
+        document.getElementById('stop-btn').addEventListener('click', stopTraining);
+        document.getElementById('save-rewards-btn').addEventListener('click', saveRewardWeights);
+        document.getElementById('refresh-trajectories').addEventListener('click', loadTrajectories);
+        document.getElementById('play-btn').addEventListener('click', playTrajectory);
+        document.getElementById('reset-btn').addEventListener('click', resetTrajectory);
+        
+        document.getElementById('trajectory-select').addEventListener('change', (e) => {
+            if (e.target.value) loadTrajectory(e.target.value);
+        });
+        
+        document.getElementById('config-select').addEventListener('change', (e) => {
+            const name = e.target.value.replace('config/', '').replace('.yml', '');
+            loadRewardWeights(name);
+        });
+        
+        // Tabs
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                const tabId = tab.dataset.tab;
+                document.getElementById('tab-trajectory').style.display = tabId === 'trajectory' ? 'block' : 'none';
+                document.getElementById('tab-console').style.display = tabId === 'console' ? 'block' : 'none';
+            });
+        });
+        
+        // ==================================================================
+        // Initialize
+        // ==================================================================
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+            loadConfigs();
+            loadTrajectories();
+            renderTrajectory();
+            
+            // Handle window resize
+            window.addEventListener('resize', renderTrajectory);
+        });
+    </script>
+</body>
+</html>
