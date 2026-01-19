@@ -364,12 +364,154 @@ async def get_trajectory(filename: str):
 # Visualization Endpoints
 # ==============================================================================
 
-@app.post("/api/visualize/episode")
-async def visualize_episode(config_path: str = "config/recommended_rewards.yml", seed: int = 42):
-    """Run a single episode and return frames."""
-    # This would require running the env and capturing frames
-    # For now, return a placeholder
-    return {"status": "not_implemented", "message": "Coming soon!"}
+class EvalRequest(BaseModel):
+    """Evaluation request parameters."""
+    model_path: Optional[str] = None  # If None, use latest
+    config_path: str = "config/recommended_rewards.yml"
+    episodes: int = 1
+    seed: int = 42
+    record_video: bool = True
+
+
+@app.get("/api/models")
+async def list_models():
+    """List available model checkpoints."""
+    project_root = Path(__file__).parent.parent.parent.parent
+    models = []
+    
+    # Check runs/latest
+    latest_dir = project_root / "runs" / "latest"
+    if latest_dir.exists():
+        for f in sorted(latest_dir.glob("*.zip"), reverse=True):
+            models.append({
+                "path": str(f.relative_to(project_root)),
+                "name": f.stem,
+                "type": "latest",
+            })
+    
+    # Check runs/checkpoints
+    ckpt_dir = project_root / "runs" / "checkpoints"
+    if ckpt_dir.exists():
+        for run_dir in sorted(ckpt_dir.iterdir(), reverse=True):
+            if run_dir.is_dir():
+                for f in sorted(run_dir.glob("*.zip"), reverse=True)[:5]:  # Last 5 per run
+                    models.append({
+                        "path": str(f.relative_to(project_root)),
+                        "name": f"{run_dir.name}/{f.stem}",
+                        "type": "checkpoint",
+                    })
+    
+    return {"models": models[:20]}  # Limit to 20 most recent
+
+
+@app.get("/api/videos")
+async def list_videos():
+    """List available evaluation videos."""
+    project_root = Path(__file__).parent.parent.parent.parent
+    videos = []
+    
+    video_dir = project_root / "runs" / "eval_videos"
+    if video_dir.exists():
+        for mp4 in sorted(video_dir.rglob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
+            videos.append({
+                "path": str(mp4.relative_to(project_root)),
+                "name": mp4.stem,
+                "size_mb": round(mp4.stat().st_size / 1024 / 1024, 2),
+            })
+    
+    return {"videos": videos}
+
+
+@app.get("/api/video/{path:path}")
+async def get_video(path: str):
+    """Serve a video file."""
+    project_root = Path(__file__).parent.parent.parent.parent
+    video_path = project_root / path
+    
+    if not video_path.exists() or not path.endswith(".mp4"):
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    return FileResponse(video_path, media_type="video/mp4")
+
+
+@app.post("/api/eval/run")
+async def run_evaluation(req: EvalRequest):
+    """Run evaluation on a model and optionally record video."""
+    project_root = Path(__file__).parent.parent.parent.parent
+    
+    # Find model path
+    if req.model_path:
+        model_path = project_root / req.model_path
+    else:
+        # Find latest model
+        latest_dir = project_root / "runs" / "latest"
+        if not latest_dir.exists():
+            raise HTTPException(status_code=404, detail="No models found. Train first!")
+        
+        zips = list(latest_dir.glob("*.zip"))
+        if not zips:
+            raise HTTPException(status_code=404, detail="No models found in runs/latest")
+        
+        model_path = max(zips, key=lambda p: p.stat().st_mtime)
+    
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail=f"Model not found: {model_path}")
+    
+    # Build eval command
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    video_dir = project_root / "runs" / "eval_videos" / "dashboard" / timestamp
+    
+    cmd = [
+        sys.executable, "-m", "neoskidrl.scripts.eval",
+        "--model", str(model_path),
+        "--config", str(project_root / req.config_path),
+        "--episodes", str(req.episodes),
+        "--seed", str(req.seed),
+        "--output-dir", str(video_dir),
+    ]
+    
+    if req.record_video:
+        cmd.extend(["--video-dir", str(video_dir), "--record-video"])
+    
+    # Run evaluation (blocking for now, could be async later)
+    await broadcast({"type": "eval_started", "model": str(model_path.name)})
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 minute timeout
+        )
+        
+        # Find generated video
+        video_path = None
+        if req.record_video and video_dir.exists():
+            videos = list(video_dir.glob("*.mp4"))
+            if videos:
+                video_path = str(videos[0].relative_to(project_root))
+        
+        await broadcast({
+            "type": "eval_completed",
+            "success": result.returncode == 0,
+            "video_path": video_path,
+        })
+        
+        return {
+            "status": "completed",
+            "return_code": result.returncode,
+            "video_path": video_path,
+            "stdout": result.stdout[-2000:] if result.stdout else "",  # Last 2000 chars
+            "stderr": result.stderr[-1000:] if result.stderr else "",
+        }
+        
+    except subprocess.TimeoutExpired:
+        await broadcast({"type": "eval_failed", "error": "Timeout"})
+        raise HTTPException(status_code=504, detail="Evaluation timed out")
+    except Exception as e:
+        await broadcast({"type": "eval_failed", "error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==============================================================================

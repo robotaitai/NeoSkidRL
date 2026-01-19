@@ -529,6 +529,29 @@
                     </div>
                 </div>
                 
+                <!-- Evaluation -->
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h3 class="card-title">🎬 Evaluate & Watch</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="form-label">Model</label>
+                            <select class="form-select" id="model-select">
+                                <option value="">Latest model</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Episodes</label>
+                            <input type="number" class="form-input" id="eval-episodes" value="1" min="1" max="10">
+                        </div>
+                        <button class="btn btn-primary btn-block" id="eval-btn" style="margin-top: 0.75rem;">
+                            🎬 Run Evaluation (with video)
+                        </button>
+                        <div id="eval-status" style="margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted);"></div>
+                    </div>
+                </div>
+                
                 <!-- Training Progress -->
                 <div class="card" id="progress-card" style="display: none;">
                     <div class="card-header">
@@ -572,6 +595,7 @@
                         <h3 class="card-title">🗺️ Trajectory Viewer</h3>
                         <div class="tabs">
                             <button class="tab active" data-tab="trajectory">Trajectory</button>
+                            <button class="tab" data-tab="video">Video</button>
                             <button class="tab" data-tab="console">Console</button>
                         </div>
                     </div>
@@ -607,6 +631,23 @@
                                 <div class="metric-card">
                                     <div class="metric-value" id="traj-speed">-</div>
                                     <div class="metric-label">Max Speed</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Video Tab -->
+                        <div id="tab-video" style="display: none;">
+                            <div style="display: flex; gap: 0.75rem; margin-bottom: 0.75rem;">
+                                <select class="form-select" id="video-select" style="flex: 1;">
+                                    <option value="">Select video...</option>
+                                </select>
+                                <button class="btn btn-secondary" id="refresh-videos">🔄</button>
+                            </div>
+                            <div id="video-container" style="background: var(--bg-secondary); border-radius: 8px; padding: 1rem; min-height: 300px; display: flex; align-items: center; justify-content: center;">
+                                <div style="text-align: center; color: var(--text-muted);">
+                                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">🎬</div>
+                                    <div>Run an evaluation to generate a video</div>
+                                    <div style="font-size: 0.85rem; margin-top: 0.5rem;">or select an existing video above</div>
                                 </div>
                             </div>
                         </div>
@@ -1163,8 +1204,123 @@
                 
                 const tabId = tab.dataset.tab;
                 document.getElementById('tab-trajectory').style.display = tabId === 'trajectory' ? 'block' : 'none';
+                document.getElementById('tab-video').style.display = tabId === 'video' ? 'block' : 'none';
                 document.getElementById('tab-console').style.display = tabId === 'console' ? 'block' : 'none';
             });
+        });
+        
+        // ==================================================================
+        // Evaluation
+        // ==================================================================
+        
+        async function loadModels() {
+            try {
+                const response = await fetch('/api/models');
+                const data = await response.json();
+                
+                const select = document.getElementById('model-select');
+                select.innerHTML = '<option value="">Latest model (auto-detect)</option>';
+                
+                for (const m of data.models) {
+                    const option = document.createElement('option');
+                    option.value = m.path;
+                    option.textContent = m.name;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.log('Could not load models');
+            }
+        }
+        
+        async function loadVideos() {
+            try {
+                const response = await fetch('/api/videos');
+                const data = await response.json();
+                
+                const select = document.getElementById('video-select');
+                select.innerHTML = '<option value="">Select video...</option>';
+                
+                for (const v of data.videos) {
+                    const option = document.createElement('option');
+                    option.value = v.path;
+                    option.textContent = `${v.name} (${v.size_mb} MB)`;
+                    select.appendChild(option);
+                }
+            } catch (error) {
+                console.log('Could not load videos');
+            }
+        }
+        
+        async function runEvaluation() {
+            const evalBtn = document.getElementById('eval-btn');
+            const evalStatus = document.getElementById('eval-status');
+            
+            evalBtn.disabled = true;
+            evalBtn.textContent = '⏳ Running...';
+            evalStatus.innerHTML = '<span style="color: var(--accent-warning);">Evaluating model and recording video...</span>';
+            
+            try {
+                const response = await fetch('/api/eval/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model_path: document.getElementById('model-select').value || null,
+                        config_path: document.getElementById('config-select').value,
+                        episodes: parseInt(document.getElementById('eval-episodes').value),
+                        seed: Math.floor(Math.random() * 1000),
+                        record_video: true,
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail);
+                }
+                
+                const result = await response.json();
+                
+                if (result.video_path) {
+                    evalStatus.innerHTML = '<span style="color: var(--accent-success);">✅ Video ready!</span>';
+                    showVideo(result.video_path);
+                    
+                    // Switch to video tab
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelector('[data-tab="video"]').classList.add('active');
+                    document.getElementById('tab-trajectory').style.display = 'none';
+                    document.getElementById('tab-video').style.display = 'block';
+                    document.getElementById('tab-console').style.display = 'none';
+                    
+                    // Refresh video list
+                    loadVideos();
+                } else {
+                    evalStatus.innerHTML = '<span style="color: var(--accent-warning);">Evaluation completed but no video generated</span>';
+                }
+                
+                showToast('Evaluation completed!', 'success');
+                
+            } catch (error) {
+                evalStatus.innerHTML = `<span style="color: var(--accent-danger);">❌ ${error.message}</span>`;
+                showToast(`Error: ${error.message}`, 'error');
+            } finally {
+                evalBtn.disabled = false;
+                evalBtn.textContent = '🎬 Run Evaluation (with video)';
+            }
+        }
+        
+        function showVideo(videoPath) {
+            const container = document.getElementById('video-container');
+            container.innerHTML = `
+                <video controls autoplay style="width: 100%; max-height: 400px; border-radius: 8px;">
+                    <source src="/api/video/${videoPath}" type="video/mp4">
+                    Your browser does not support video playback.
+                </video>
+            `;
+        }
+        
+        document.getElementById('eval-btn').addEventListener('click', runEvaluation);
+        document.getElementById('refresh-videos').addEventListener('click', loadVideos);
+        document.getElementById('video-select').addEventListener('change', (e) => {
+            if (e.target.value) showVideo(e.target.value);
         });
         
         // ==================================================================
@@ -1175,6 +1331,8 @@
             connectWebSocket();
             loadConfigs();
             loadTrajectories();
+            loadModels();
+            loadVideos();
             renderTrajectory();
             
             // Handle window resize
