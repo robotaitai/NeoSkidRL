@@ -529,25 +529,54 @@
                     </div>
                 </div>
                 
-                <!-- Evaluation -->
+                <!-- Watch Simulation -->
                 <div class="card" style="margin-bottom: 1.5rem;">
                     <div class="card-header">
-                        <h3 class="card-title">🎬 Evaluate & Watch</h3>
+                        <h3 class="card-title">🎬 Watch Simulation</h3>
                     </div>
                     <div class="card-body">
+                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                            Run a quick simulation and watch the result as a video.
+                        </p>
+                        
                         <div class="form-group">
-                            <label class="form-label">Model</label>
+                            <label class="form-label">Policy</label>
+                            <select class="form-select" id="demo-policy">
+                                <option value="heuristic">🎯 Heuristic (simple goal-seeking)</option>
+                                <option value="random">🎲 Random actions</option>
+                                <option value="sac">🧠 Trained SAC model</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group" id="model-select-group">
+                            <label class="form-label">Model (for SAC)</label>
                             <select class="form-select" id="model-select">
                                 <option value="">Latest model</option>
                             </select>
                         </div>
+                        
                         <div class="form-group">
-                            <label class="form-label">Episodes</label>
-                            <input type="number" class="form-input" id="eval-episodes" value="1" min="1" max="10">
+                            <label class="form-label">Steps</label>
+                            <input type="number" class="form-input" id="demo-steps" value="200" min="50" max="1000" step="50">
                         </div>
-                        <button class="btn btn-primary btn-block" id="eval-btn" style="margin-top: 0.75rem;">
-                            🎬 Run Evaluation (with video)
-                        </button>
+                        
+                        <div class="btn-group" style="margin-top: 0.75rem;">
+                            <button class="btn btn-primary btn-block" id="demo-btn">
+                                ▶ Run Demo
+                            </button>
+                        </div>
+                        
+                        <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color);">
+                            <label class="form-label">Or evaluate trained model:</label>
+                            <div class="form-group">
+                                <label class="form-label" style="font-size: 0.75rem;">Episodes</label>
+                                <input type="number" class="form-input" id="eval-episodes" value="1" min="1" max="10">
+                            </div>
+                            <button class="btn btn-secondary btn-block" id="eval-btn" style="margin-top: 0.5rem;">
+                                🎬 Run Evaluation
+                            </button>
+                        </div>
+                        
                         <div id="eval-status" style="margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-muted);"></div>
                     </div>
                 </div>
@@ -1317,6 +1346,69 @@
             `;
         }
         
+        async function runDemo() {
+            const demoBtn = document.getElementById('demo-btn');
+            const evalStatus = document.getElementById('eval-status');
+            
+            demoBtn.disabled = true;
+            demoBtn.textContent = '⏳ Running...';
+            evalStatus.innerHTML = '<span style="color: var(--accent-warning);">Running simulation...</span>';
+            
+            try {
+                const response = await fetch('/api/demo/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        config_path: document.getElementById('config-select').value,
+                        policy: document.getElementById('demo-policy').value,
+                        model_path: document.getElementById('model-select').value || null,
+                        steps: parseInt(document.getElementById('demo-steps').value),
+                        seed: Math.floor(Math.random() * 1000),
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail);
+                }
+                
+                const result = await response.json();
+                
+                if (result.video_path) {
+                    evalStatus.innerHTML = '<span style="color: var(--accent-success);">✅ Video ready!</span>';
+                    showVideo(result.video_path);
+                    
+                    // Switch to video tab
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelector('[data-tab="video"]').classList.add('active');
+                    document.getElementById('tab-trajectory').style.display = 'none';
+                    document.getElementById('tab-video').style.display = 'block';
+                    document.getElementById('tab-console').style.display = 'none';
+                    
+                    loadVideos();
+                }
+                
+                showToast('Demo completed!', 'success');
+                
+            } catch (error) {
+                evalStatus.innerHTML = `<span style="color: var(--accent-danger);">❌ ${error.message}</span>`;
+                showToast(`Error: ${error.message}`, 'error');
+            } finally {
+                demoBtn.disabled = false;
+                demoBtn.textContent = '▶ Run Demo';
+            }
+        }
+        
+        // Show/hide model selector based on policy
+        document.getElementById('demo-policy').addEventListener('change', (e) => {
+            const modelGroup = document.getElementById('model-select-group');
+            modelGroup.style.display = e.target.value === 'sac' ? 'block' : 'none';
+        });
+        
+        // Initialize model selector visibility
+        document.getElementById('model-select-group').style.display = 'none';
+        
+        document.getElementById('demo-btn').addEventListener('click', runDemo);
         document.getElementById('eval-btn').addEventListener('click', runEvaluation);
         document.getElementById('refresh-videos').addEventListener('click', loadVideos);
         document.getElementById('video-select').addEventListener('change', (e) => {

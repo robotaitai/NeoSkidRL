@@ -373,6 +373,15 @@ class EvalRequest(BaseModel):
     record_video: bool = True
 
 
+class DemoRequest(BaseModel):
+    """Demo request parameters."""
+    config_path: str = "config/recommended_rewards.yml"
+    policy: str = "heuristic"  # heuristic, random, or sac
+    model_path: Optional[str] = None
+    steps: int = 200
+    seed: int = 42
+
+
 @app.get("/api/models")
 async def list_models():
     """List available model checkpoints."""
@@ -432,6 +441,115 @@ async def get_video(path: str):
         raise HTTPException(status_code=404, detail="Video not found")
     
     return FileResponse(video_path, media_type="video/mp4")
+
+
+@app.post("/api/demo/run")
+async def run_demo(req: DemoRequest):
+    """Run a quick demo and generate a video."""
+    project_root = Path(__file__).parent.parent.parent.parent
+    
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    frames_dir = project_root / "runs" / "demo_frames" / timestamp
+    video_path = project_root / "runs" / "eval_videos" / "demos" / f"demo_{timestamp}.mp4"
+    
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Build demo command
+    cmd = [
+        sys.executable, "-m", "neoskidrl.scripts.visual_demo",
+        "--config", str(project_root / req.config_path),
+        "--mode", "frames",
+        "--policy", req.policy,
+        "--steps", str(req.steps),
+        "--seed", str(req.seed),
+        "--outdir", str(frames_dir),
+        "--render", "rgb",
+    ]
+    
+    if req.policy == "sac" and req.model_path:
+        cmd.extend(["--model", str(project_root / req.model_path)])
+    elif req.policy == "sac":
+        # Find latest model
+        latest_dir = project_root / "runs" / "latest"
+        if latest_dir.exists():
+            zips = list(latest_dir.glob("*.zip"))
+            if zips:
+                latest_model = max(zips, key=lambda p: p.stat().st_mtime)
+                cmd.extend(["--model", str(latest_model)])
+    
+    await broadcast({"type": "demo_started", "policy": req.policy})
+    
+    try:
+        # Run demo to generate frames
+        result = subprocess.run(
+            cmd,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        
+        if result.returncode != 0:
+            raise Exception(f"Demo failed: {result.stderr}")
+        
+        # Convert frames to video using ffmpeg
+        ppm_files = list(frames_dir.glob("*.ppm"))
+        if not ppm_files:
+            raise Exception("No frames generated")
+        
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-framerate", "30",
+            "-pattern_type", "glob",
+            "-i", str(frames_dir / "*.ppm"),
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", "23",
+            str(video_path),
+        ]
+        
+        ffmpeg_result = subprocess.run(
+            ffmpeg_cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        
+        if ffmpeg_result.returncode != 0:
+            # Try without glob pattern (some ffmpeg versions)
+            ffmpeg_cmd2 = [
+                "ffmpeg", "-y",
+                "-framerate", "30",
+                "-i", str(frames_dir / "frame_%04d.ppm"),
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                str(video_path),
+            ]
+            subprocess.run(ffmpeg_cmd2, capture_output=True, timeout=30)
+        
+        # Clean up frames
+        import shutil
+        shutil.rmtree(frames_dir, ignore_errors=True)
+        
+        video_rel_path = str(video_path.relative_to(project_root))
+        
+        await broadcast({
+            "type": "demo_completed",
+            "video_path": video_rel_path,
+        })
+        
+        return {
+            "status": "completed",
+            "video_path": video_rel_path,
+        }
+        
+    except subprocess.TimeoutExpired:
+        await broadcast({"type": "demo_failed", "error": "Timeout"})
+        raise HTTPException(status_code=504, detail="Demo timed out")
+    except Exception as e:
+        await broadcast({"type": "demo_failed", "error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/eval/run")
